@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "jdk-yuan-ma-zhi-threadlocal"
+title: "jdk源码阅读之ThreadLocal"
 date: 2015-10-18 20:40:24 +0800
 comments: true
 categories: jdk源码阅读
