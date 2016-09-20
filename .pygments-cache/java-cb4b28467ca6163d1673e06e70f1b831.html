@@ -1,0 +1,31 @@
+<div class="highlight"><pre><span class="kd">protected</span> <span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">tryReleaseShared</span><span class="o">(</span><span class="kt">int</span> <span class="n">unused</span><span class="o">)</span> <span class="o">{</span>
+            <span class="n">Thread</span> <span class="n">current</span> <span class="o">=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">();</span>
+            <span class="k">if</span> <span class="o">(</span><span class="n">firstReader</span> <span class="o">==</span> <span class="n">current</span><span class="o">)</span> <span class="o">{</span>
+                <span class="c1">// assert firstReaderHoldCount &gt; 0;</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">firstReaderHoldCount</span> <span class="o">==</span> <span class="mi">1</span><span class="o">)</span>
+                    <span class="n">firstReader</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
+                <span class="k">else</span>
+                    <span class="n">firstReaderHoldCount</span><span class="o">--;</span>
+            <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+                <span class="n">HoldCounter</span> <span class="n">rh</span> <span class="o">=</span> <span class="n">cachedHoldCounter</span><span class="o">;</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">rh</span> <span class="o">==</span> <span class="kc">null</span> <span class="o">||</span> <span class="n">rh</span><span class="o">.</span><span class="na">tid</span> <span class="o">!=</span> <span class="n">current</span><span class="o">.</span><span class="na">getId</span><span class="o">())</span>
+                    <span class="n">rh</span> <span class="o">=</span> <span class="n">readHolds</span><span class="o">.</span><span class="na">get</span><span class="o">();</span>
+                <span class="kt">int</span> <span class="n">count</span> <span class="o">=</span> <span class="n">rh</span><span class="o">.</span><span class="na">count</span><span class="o">;</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">count</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="o">)</span> <span class="o">{</span>
+                    <span class="n">readHolds</span><span class="o">.</span><span class="na">remove</span><span class="o">();</span>
+                    <span class="k">if</span> <span class="o">(</span><span class="n">count</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="o">)</span>
+                        <span class="k">throw</span> <span class="nf">unmatchedUnlockException</span><span class="o">();</span>
+                <span class="o">}</span>
+                <span class="o">--</span><span class="n">rh</span><span class="o">.</span><span class="na">count</span><span class="o">;</span>
+            <span class="o">}</span>
+            <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+                <span class="kt">int</span> <span class="n">c</span> <span class="o">=</span> <span class="n">getState</span><span class="o">();</span>
+                <span class="kt">int</span> <span class="n">nextc</span> <span class="o">=</span> <span class="n">c</span> <span class="o">-</span> <span class="n">SHARED_UNIT</span><span class="o">;</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">compareAndSetState</span><span class="o">(</span><span class="n">c</span><span class="o">,</span> <span class="n">nextc</span><span class="o">))</span>
+                    <span class="c1">// Releasing the read lock has no effect on readers,</span>
+                    <span class="c1">// but it may allow waiting writers to proceed if</span>
+                    <span class="c1">// both read and write locks are now free.</span>
+                    <span class="k">return</span> <span class="n">nextc</span> <span class="o">==</span> <span class="mi">0</span><span class="o">;</span>
+            <span class="o">}</span>
+        <span class="o">}</span>
+</pre></div>

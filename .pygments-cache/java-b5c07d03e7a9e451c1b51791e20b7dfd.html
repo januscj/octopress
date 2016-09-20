@@ -1,0 +1,16 @@
+<div class="highlight"><pre>    <span class="kd">private</span> <span class="n">Node</span> <span class="nf">enq</span><span class="o">(</span><span class="kd">final</span> <span class="n">Node</span> <span class="n">node</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+            <span class="n">Node</span> <span class="n">t</span> <span class="o">=</span> <span class="n">tail</span><span class="o">;</span>
+            <span class="k">if</span> <span class="o">(</span><span class="n">t</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span> <span class="c1">// Must initialize</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">compareAndSetHead</span><span class="o">(</span><span class="k">new</span> <span class="nf">Node</span><span class="o">()))</span>
+                    <span class="n">tail</span> <span class="o">=</span> <span class="n">head</span><span class="o">;</span>
+            <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+                <span class="n">node</span><span class="o">.</span><span class="na">prev</span> <span class="o">=</span> <span class="n">t</span><span class="o">;</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">compareAndSetTail</span><span class="o">(</span><span class="n">t</span><span class="o">,</span> <span class="n">node</span><span class="o">))</span> <span class="o">{</span>
+                    <span class="n">t</span><span class="o">.</span><span class="na">next</span> <span class="o">=</span> <span class="n">node</span><span class="o">;</span>
+                    <span class="k">return</span> <span class="n">t</span><span class="o">;</span>
+                <span class="o">}</span>
+            <span class="o">}</span>
+        <span class="o">}</span>
+    <span class="o">}</span>
+</pre></div>

@@ -1,0 +1,20 @@
+<div class="highlight"><pre>   <span class="kd">static</span> <span class="kd">final</span> <span class="kd">class</span> <span class="nc">FairSync</span> <span class="kd">extends</span> <span class="n">Sync</span> <span class="o">{</span>
+        <span class="kd">private</span> <span class="kd">static</span> <span class="kd">final</span> <span class="kt">long</span> <span class="n">serialVersionUID</span> <span class="o">=</span> <span class="mi">2014338818796000944L</span><span class="o">;</span>
+
+        <span class="n">FairSync</span><span class="o">(</span><span class="kt">int</span> <span class="n">permits</span><span class="o">)</span> <span class="o">{</span>
+            <span class="kd">super</span><span class="o">(</span><span class="n">permits</span><span class="o">);</span>
+        <span class="o">}</span>
+
+        <span class="kd">protected</span> <span class="kt">int</span> <span class="nf">tryAcquireShared</span><span class="o">(</span><span class="kt">int</span> <span class="n">acquires</span><span class="o">)</span> <span class="o">{</span>
+            <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">hasQueuedPredecessors</span><span class="o">())</span>
+                    <span class="k">return</span> <span class="o">-</span><span class="mi">1</span><span class="o">;</span>
+                <span class="kt">int</span> <span class="n">available</span> <span class="o">=</span> <span class="n">getState</span><span class="o">();</span>
+                <span class="kt">int</span> <span class="n">remaining</span> <span class="o">=</span> <span class="n">available</span> <span class="o">-</span> <span class="n">acquires</span><span class="o">;</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">remaining</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="o">||</span>
+                    <span class="n">compareAndSetState</span><span class="o">(</span><span class="n">available</span><span class="o">,</span> <span class="n">remaining</span><span class="o">))</span>
+                    <span class="k">return</span> <span class="n">remaining</span><span class="o">;</span>
+            <span class="o">}</span>
+        <span class="o">}</span>
+    <span class="o">}</span>
+</pre></div>

@@ -1,0 +1,11 @@
+<div class="highlight"><pre>    <span class="kd">public</span> <span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">hasQueuedPredecessors</span><span class="o">()</span> <span class="o">{</span>
+        <span class="c1">// The correctness of this depends on head being initialized</span>
+        <span class="c1">// before tail and on head.next being accurate if the current</span>
+        <span class="c1">// thread is first in queue.</span>
+        <span class="n">Node</span> <span class="n">t</span> <span class="o">=</span> <span class="n">tail</span><span class="o">;</span> <span class="c1">// Read fields in reverse initialization order</span>
+        <span class="n">Node</span> <span class="n">h</span> <span class="o">=</span> <span class="n">head</span><span class="o">;</span>
+        <span class="n">Node</span> <span class="n">s</span><span class="o">;</span>
+        <span class="k">return</span> <span class="n">h</span> <span class="o">!=</span> <span class="n">t</span> <span class="o">&amp;&amp;</span>
+            <span class="o">((</span><span class="n">s</span> <span class="o">=</span> <span class="n">h</span><span class="o">.</span><span class="na">next</span><span class="o">)</span> <span class="o">==</span> <span class="kc">null</span> <span class="o">||</span> <span class="n">s</span><span class="o">.</span><span class="na">thread</span> <span class="o">!=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">());</span>
+    <span class="o">}</span>
+</pre></div>

@@ -1,0 +1,6 @@
+<div class="highlight"><pre>    <span class="kd">public</span> <span class="nf">ReentrantReadWriteLock</span><span class="o">(</span><span class="kt">boolean</span> <span class="n">fair</span><span class="o">)</span> <span class="o">{</span>
+        <span class="n">sync</span> <span class="o">=</span> <span class="n">fair</span> <span class="o">?</span> <span class="k">new</span> <span class="nf">FairSync</span><span class="o">()</span> <span class="o">:</span> <span class="k">new</span> <span class="nf">NonfairSync</span><span class="o">();</span>
+        <span class="n">readerLock</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">ReadLock</span><span class="o">(</span><span class="k">this</span><span class="o">);</span>
+        <span class="n">writerLock</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">WriteLock</span><span class="o">(</span><span class="k">this</span><span class="o">);</span>
+    <span class="o">}</span>
+</pre></div>

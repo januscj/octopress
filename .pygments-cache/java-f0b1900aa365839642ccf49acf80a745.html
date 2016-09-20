@@ -1,0 +1,11 @@
+<div class="highlight"><pre>  <span class="kd">protected</span> <span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">tryRelease</span><span class="o">(</span><span class="kt">int</span> <span class="n">releases</span><span class="o">)</span> <span class="o">{</span>
+            <span class="k">if</span> <span class="o">(!</span><span class="n">isHeldExclusively</span><span class="o">())</span>
+                <span class="k">throw</span> <span class="k">new</span> <span class="nf">IllegalMonitorStateException</span><span class="o">();</span>
+            <span class="kt">int</span> <span class="n">nextc</span> <span class="o">=</span> <span class="n">getState</span><span class="o">()</span> <span class="o">-</span> <span class="n">releases</span><span class="o">;</span>
+            <span class="kt">boolean</span> <span class="n">free</span> <span class="o">=</span> <span class="n">exclusiveCount</span><span class="o">(</span><span class="n">nextc</span><span class="o">)</span> <span class="o">==</span> <span class="mi">0</span><span class="o">;</span>
+            <span class="k">if</span> <span class="o">(</span><span class="n">free</span><span class="o">)</span>
+                <span class="n">setExclusiveOwnerThread</span><span class="o">(</span><span class="kc">null</span><span class="o">);</span>
+            <span class="n">setState</span><span class="o">(</span><span class="n">nextc</span><span class="o">);</span>
+            <span class="k">return</span> <span class="n">free</span><span class="o">;</span>
+        <span class="o">}</span>
+</pre></div>

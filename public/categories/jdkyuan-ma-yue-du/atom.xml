@@ -1,0 +1,825 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: Jdk源码阅读 | Chin的博客]]></title>
+  <link href="http://januscj.github.io//categories/jdkyuan-ma-yue-du/atom.xml" rel="self"/>
+  <link href="http://januscj.github.io/"/>
+  <updated>2016-09-05T12:10:27+08:00</updated>
+  <id>http://januscj.github.io/</id>
+  <author>
+    <name><![CDATA[jean]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[jdk源码阅读之ThreadLocal]]></title>
+    <link href="http://januscj.github.io/2015/10/18/jdk-yuan-ma-zhi-threadlocal/"/>
+    <updated>2015-10-18T20:40:24+08:00</updated>
+    <id>http://januscj.github.io/2015/10/18/jdk-yuan-ma-zhi-threadlocal</id>
+    <content type="html"><![CDATA[<p>并发编程中，另一个常用的工具是Threadlocal.今天来一探其神秘面纱。
+我们最常用的是Threadlocal的set方法，下面从set方法的源码入手:</p>
+
+<pre><code class="java">
+    public void set(T value) {
+        Thread t = Thread.currentThread();
+        ThreadLocal.ThreadLocalMap map = this.getMap(t);
+        if(map != null) {
+            map.set(this, value);
+        } else {
+            this.createMap(t, value);
+        }
+
+    }
+</code></pre>
+
+<p>从上面的代码来看，先回调用getMap判断ThreadLocalMap是否存在，getMap的代码如下:</p>
+
+<pre><code class="java">
+  ThreadLocal.ThreadLocalMap getMap(Thread t) {
+        return t.threadLocals;
+    }
+</code></pre>
+
+<p>它实际上就是Thread对象的一个成员变量。再回到set方法，如果当前Thread对象的threadLocals没有设置，则会调用createMap创建新的ThreadlocalMap。</p>
+
+<pre><code class="java">
+  void createMap(Thread t, T firstValue) {
+        t.threadLocals = new ThreadLocal.ThreadLocalMap(this, firstValue);
+</code></pre>
+
+<p>将当前ThreadLocal对象和传给ThreadLocalMap。</p>
+
+<p>下面来看看ThreadLocalMap的构造函数</p>
+
+<pre><code class="java">        ThreadLocalMap(ThreadLocal firstKey, Object firstValue) {
+            table = new Entry[INITIAL_CAPACITY];
+            int i = firstKey.threadLocalHashCode &amp; (INITIAL_CAPACITY - 1);
+            table[i] = new Entry(firstKey, firstValue);
+            size = 1;
+            setThreshold(INITIAL_CAPACITY);
+        }
+</code></pre>
+
+<p>ThreadLocalMap实际上只是一个数组,第一个entry的放入位置是根据firstKey.threadLocalHashCode &amp; (INITIAL_CAPACITY - 1)来计算的。ThreadLocal的threadLocalHashCode是0x61c88647累加得到的,而0x61c88647是黄金比例Math.sqrt(5) - 1左移31位得到。</p>
+
+<p>再回到set方法，如果Thread的threadlocal已存在，则直接调用ThreadLocalMap的set，源码如下:</p>
+
+<pre><code class="java">private void set(ThreadLocal key, Object value) {
+
+            // We don't use a fast path as with get() because it is at
+            // least as common to use set() to create new entries as
+            // it is to replace existing ones, in which case, a fast
+            // path would fail more often than not.
+
+            Entry[] tab = table;
+            int len = tab.length;
+            int i = key.threadLocalHashCode &amp; (len-1);
+
+            for (Entry e = tab[i];
+                 e != null;
+                 e = tab[i = nextIndex(i, len)]) {
+                ThreadLocal k = e.get();
+
+                if (k == key) {
+                    e.value = value;
+                    return;
+                }
+
+                if (k == null) {
+                    replaceStaleEntry(key, value, i);
+                    return;
+                }
+            }
+
+            tab[i] = new Entry(key, value);
+            int sz = ++size;
+            if (!cleanSomeSlots(i, sz) &amp;&amp; sz &gt;= threshold)
+                rehash();
+        }
+</code></pre>
+
+<p>set方法会先判断map中是否有同一个ThreadLocal，如果有就使用当前的value覆盖调原来的value。如果原来的threadlocal为null(被回收掉了)，则直接使用当前的key/value替换掉原来的threadlocal。否则，找到一个空的位置把当前的Entry填进去。</p>
+
+<p>下面看看get方法的源码
+<code>java
+    public T get() {
+        Thread t = Thread.currentThread();
+        ThreadLocalMap map = getMap(t);
+        if (map != null) {
+            ThreadLocalMap.Entry e = map.getEntry(this);
+            if (e != null)
+                return (T)e.value;
+        }
+        return setInitialValue();
+    }
+</code>
+get方法很简单就是从Thread的ThreadLocalMap中取，如果没有取到，则初始化数据到map中。</p>
+
+<p>ThreadLocal的remove是直接调用ThreadLocalMap的remove方法，源码如下
+```java
+        private void remove(ThreadLocal key) {
+            Entry[] tab = table;
+            int len = tab.length;
+            int i = key.threadLocalHashCode &amp; (len-1);
+            for (Entry e = tab[i];
+                 e != null;
+                 e = tab[i = nextIndex(i, len)]) {
+                if (e.get() == key) {
+                    e.clear();
+                    expungeStaleEntry(i);
+                    return;
+                }
+            }</p>
+
+<p>```
+从代码来看，如果找到则会调用Entry的clear，接着调用expungeStaleEntry移除entry。</p>
+
+<p>通读源码知道，ThreadLocalMap的设计思想跟HashMap是不一样的，HashMap实用链表来解决冲突，而ThreadLocalMap实用是开放地址的算法来解决冲突，同时在set的时候会移除stale entry，来保证数组不会太慢，导致多次rehash。</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[jdk源码阅读之ReentrantReadWriteLock]]></title>
+    <link href="http://januscj.github.io/2015/09/28/jdk-yuan-ma-zhi-reentrantreadwritelock/"/>
+    <updated>2015-09-28T19:14:56+08:00</updated>
+    <id>http://januscj.github.io/2015/09/28/jdk-yuan-ma-zhi-reentrantreadwritelock</id>
+    <content type="html"><![CDATA[<p>了解完reentrantlock，再来看看reentrantreadwritelock。在看reentrantreadwritelock源码之前，得了解它的特点。我们都知道读锁跟写锁是互斥的，多个读线程可以同时进行读操作，就是说对锁对读线程来说是共享锁。写锁是独占锁，写锁之间也是互斥的。了解这些基本特性之后，再来看源码。</p>
+
+<pre><code class="java ">
+    public ReentrantReadWriteLock(boolean fair) {
+        sync = fair ? new FairSync() : new NonfairSync();
+        readerLock = new ReadLock(this);
+        writerLock = new WriteLock(this);
+    }
+</code></pre>
+
+<p>reentrantreadwritelock是通过上面的代码初始化的，从上面来看读锁跟写锁公用同一个同步器。因为一个同步器只有一个state变量，我们知道同步器使用state来标识线程的不同状态。<strong>那么，reentrantreadwritelock是怎么来区分读锁、写锁的，后面看过源码后知道,它是用state的高16位表示读锁，低16位表示写锁。</strong></p>
+
+<p>先来看读锁的获取，读锁获取首先是下面的代码</p>
+
+<pre><code class="java">
+protected final int tryAcquireShared(int unused) {
+            /*
+             * Walkthrough:
+             * 1. If write lock held by another thread, fail.
+             * 2. Otherwise, this thread is eligible for
+             *    lock wrt state, so ask if it should block
+             *    because of queue policy. If not, try
+             *    to grant by CASing state and updating count.
+             *    Note that step does not check for reentrant
+             *    acquires, which is postponed to full version
+             *    to avoid having to check hold count in
+             *    the more typical non-reentrant case.
+             * 3. If step 2 fails either because thread
+             *    apparently not eligible or CAS fails or count
+             *    saturated, chain to version with full retry loop.
+             */
+            Thread current = Thread.currentThread();
+            int c = getState();
+            if (exclusiveCount(c) != 0 &amp;&amp;
+                getExclusiveOwnerThread() != current)
+                return -1;
+            int r = sharedCount(c);
+            if (!readerShouldBlock() &amp;&amp;
+                r &lt; MAX_COUNT &amp;&amp;
+                compareAndSetState(c, c + SHARED_UNIT)) {
+                if (r == 0) {
+                    firstReader = current;
+                    firstReaderHoldCount = 1;
+                } else if (firstReader == current) {
+                    firstReaderHoldCount++;
+                } else {
+                    HoldCounter rh = cachedHoldCounter;
+                    if (rh == null || rh.tid != current.getId())
+                        cachedHoldCounter = rh = readHolds.get();
+                    else if (rh.count == 0)
+                        readHolds.set(rh);
+                    rh.count++;
+                }
+                return 1;
+            }
+            return fullTryAcquireShared(current);
+        }
+</code></pre>
+
+<p>从上面的代码来看，首先如果写锁已被其他线程持有，则直接阻塞当前线程。如果进入if分支，分三种情况：没有读线程持有锁，则直接设置firstReader、firstReaderHoldCount；否则，如果当前线程是第一个读线程，则firstReaderHoldCount+1；否则，创建一个HolderCounter对象来记录线程对读锁的持有次数，并将该HolderCounter对象放入ThreadLocal中。其他的情况（CAS失败或readerShouldBlock返回true），则进入fullTryAcquireShared。</p>
+
+<pre><code class="java ">
+final int fullTryAcquireShared(Thread current) {
+            /*
+             * This code is in part redundant with that in
+             * tryAcquireShared but is simpler overall by not
+             * complicating tryAcquireShared with interactions between
+             * retries and lazily reading hold counts.
+             */
+            HoldCounter rh = null;
+            for (;;) {
+                int c = getState();
+                if (exclusiveCount(c) != 0) {
+                    if (getExclusiveOwnerThread() != current)
+                        return -1;
+                    // else we hold the exclusive lock; blocking here
+                    // would cause deadlock.
+                } else if (readerShouldBlock()) {
+                    // Make sure we're not acquiring read lock reentrantly
+                    if (firstReader == current) {
+                        // assert firstReaderHoldCount &gt; 0;
+                    } else {
+                        if (rh == null) {
+                            rh = cachedHoldCounter;
+                            if (rh == null || rh.tid != current.getId()) {
+                                rh = readHolds.get();
+                                if (rh.count == 0)
+                                    readHolds.remove();
+                            }
+                        }
+                        if (rh.count == 0)
+                            return -1;
+                    }
+                }
+                if (sharedCount(c) == MAX_COUNT)
+                    throw new Error("Maximum lock count exceeded");
+                if (compareAndSetState(c, c + SHARED_UNIT)) {
+                    if (sharedCount(c) == 0) {
+                        firstReader = current;
+                        firstReaderHoldCount = 1;
+                    } else if (firstReader == current) {
+                        firstReaderHoldCount++;
+                    } else {
+                        if (rh == null)
+                            rh = cachedHoldCounter;
+                        if (rh == null || rh.tid != current.getId())
+                            rh = readHolds.get();
+                        else if (rh.count == 0)
+                            readHolds.set(rh);
+                        rh.count++;
+                        cachedHoldCounter = rh; // cache for release
+                    }
+                    return 1;
+                }
+            }
+        }
+</code></pre>
+
+<p>fullTryAcquireShared首先会判断若其他线程持有写锁，则会阻塞。若readerShouldBlock返回true，则进入if分支，如果当前线程不是第一个读线程，同时当前线程是之前没有持有读锁，则会从ThreadLocal中移除HoldCounter，最后如果count仍是-1，则直接返回-1，阻塞当前线程。接着下来的代码就是对tryAcquireShared CAS state失败的处理，逻辑类似。</p>
+
+<p>下面来看读锁释放的逻辑:</p>
+
+<pre><code class="java ">
+protected final boolean tryReleaseShared(int unused) {
+            Thread current = Thread.currentThread();
+            if (firstReader == current) {
+                // assert firstReaderHoldCount &gt; 0;
+                if (firstReaderHoldCount == 1)
+                    firstReader = null;
+                else
+                    firstReaderHoldCount--;
+            } else {
+                HoldCounter rh = cachedHoldCounter;
+                if (rh == null || rh.tid != current.getId())
+                    rh = readHolds.get();
+                int count = rh.count;
+                if (count &lt;= 1) {
+                    readHolds.remove();
+                    if (count &lt;= 0)
+                        throw unmatchedUnlockException();
+                }
+                --rh.count;
+            }
+            for (;;) {
+                int c = getState();
+                int nextc = c - SHARED_UNIT;
+                if (compareAndSetState(c, nextc))
+                    // Releasing the read lock has no effect on readers,
+                    // but it may allow waiting writers to proceed if
+                    // both read and write locks are now free.
+                    return nextc == 0;
+            }
+        }
+</code></pre>
+
+<p>首先，如果当前线程是第一个读线程，先判断读锁重入次数是否为1,如果为1，则直接将firstReader置null;否则，firstReaderHoldCount-1；否则，如果当前线程不是第一个读线程，则对持锁次数减1.下面的for循环是处理CAS state。</p>
+
+<p>下面接着来看写锁的获取锁的过程:</p>
+
+<pre><code class="java ">
+protected final boolean tryAcquire(int acquires) {
+            /*
+             * Walkthrough:
+             * 1. If read count nonzero or write count nonzero
+             *    and owner is a different thread, fail.
+             * 2. If count would saturate, fail. (This can only
+             *    happen if count is already nonzero.)
+             * 3. Otherwise, this thread is eligible for lock if
+             *    it is either a reentrant acquire or
+             *    queue policy allows it. If so, update state
+             *    and set owner.
+             */
+            Thread current = Thread.currentThread();
+            int c = getState();
+            int w = exclusiveCount(c);
+            if (c != 0) {
+                // (Note: if c != 0 and w == 0 then shared count != 0)
+                if (w == 0 || current != getExclusiveOwnerThread())
+                    return false;
+                if (w + exclusiveCount(acquires) &gt; MAX_COUNT)
+                    throw new Error("Maximum lock count exceeded");
+                // Reentrant acquire
+                setState(c + acquires);
+                return true;
+            }
+            if (writerShouldBlock() ||
+                !compareAndSetState(c, c + acquires))
+                return false;
+            setExclusiveOwnerThread(current);
+            return true;
+        }
+</code></pre>
+
+<p>首先，从代码来看，<strong>如果是有读线程持有读锁或其他写线程持有锁，则当前写线程会阻塞</strong>，如果是当前线程持有写锁，则将持锁次数加1。如果writerShouldBlock方法返回true或CAS state失败，则阻塞当前写线程；否则，设置当前线程为写锁持有者。</p>
+
+<p>写锁的释放过程：</p>
+
+<pre><code class="java">
+  protected final boolean tryRelease(int releases) {
+            if (!isHeldExclusively())
+                throw new IllegalMonitorStateException();
+            int nextc = getState() - releases;
+            boolean free = exclusiveCount(nextc) == 0;
+            if (free)
+                setExclusiveOwnerThread(null);
+            setState(nextc);
+            return free;
+        }
+</code></pre>
+
+<p>释放锁的代码很简单，因为是只有一个线程持有锁，所有是单线程的，sate的变更没有使用CAS。</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[jdk源码阅读之ReentrantLock]]></title>
+    <link href="http://januscj.github.io/2015/09/14/jdk-yuan-ma-zhi-reentrantlock/"/>
+    <updated>2015-09-14T11:06:57+08:00</updated>
+    <id>http://januscj.github.io/2015/09/14/jdk-yuan-ma-zhi-reentrantlock</id>
+    <content type="html"><![CDATA[<p>接着来看并发工具类库另外一个常用的工具ReentrantLock。Reentrantlock也有公平策略和非公平策略,先来看非公平策略。</p>
+
+<pre><code class="java ">
+static final class NonfairSync extends ReentrantLock.Sync {
+        private static final long serialVersionUID = 7316153563782823691L;
+
+        NonfairSync() {
+        }
+
+        final void lock() {
+            if(this.compareAndSetState(0, 1)) {
+                this.setExclusiveOwnerThread(Thread.currentThread());
+            } else {
+                this.acquire(1);
+            }
+
+        }
+
+        protected final boolean tryAcquire(int acquires) {
+            return this.nonfairTryAcquire(acquires);
+        }
+    }
+</code></pre>
+
+<p>非公平策略优先尝试cas state，如果没成功，则进入AQS的aquire。先来看Sync的nonfairTryAcquire。</p>
+
+<pre><code class="java ">
+    final boolean nonfairTryAcquire(int acquires) {
+            Thread current = Thread.currentThread();
+            int c = this.getState();
+            if(c == 0) {
+                if(this.compareAndSetState(0, acquires)) {
+                    this.setExclusiveOwnerThread(current);
+                    return true;
+                }
+            } else if(current == this.getExclusiveOwnerThread()) {
+                int nextc = c + acquires;
+                if(nextc &lt; 0) {
+                    throw new Error("Maximum lock count exceeded");
+                }
+
+                this.setState(nextc);
+                return true;
+            }
+
+            return false;
+        }
+</code></pre>
+
+<p>这个方法首先判断是否线程持有锁，如果没有则获取锁，并把线程所有者设置为当前线程。否则，判断当前线程是否是持有锁，如果是，则state+1，返回true。这里说明ReentrantLock是可重入的。如果别的线程已经获取锁，则返回false。如果返回false，这个时候，我们再来看acquire方法:</p>
+
+<pre><code class="java">
+    public final void acquire(int arg) {
+        if (!tryAcquire(arg) &amp;&amp;
+            acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+            selfInterrupt();
+    } 
+</code></pre>
+
+<p>这个时候进入acquireQueued。</p>
+
+<pre><code class="java">
+ final boolean acquireQueued(final Node node, int arg) {
+        boolean failed = true;
+        try {
+            boolean interrupted = false;
+            for (;;) {
+                final Node p = node.predecessor();
+                if (p == head &amp;&amp; tryAcquire(arg)) {
+                    setHead(node);
+                    p.next = null; // help GC
+                    failed = false;
+                    return interrupted;
+                }
+                if (shouldParkAfterFailedAcquire(p, node) &amp;&amp; parkAndCheckInterrupt())
+                    interrupted = true;
+            }
+        } finally {
+            if (failed)
+                cancelAcquire(node);
+        }
+    }
+</code></pre>
+
+<p>从上面的代码来看，这个时候线程会被park住，至此获取锁的过程分析完毕。下面，来看释放锁的过程。首先unlock调用的是release方法</p>
+
+<pre><code class="java">
+    public final boolean release(int arg) {
+        if (tryRelease(arg)) {
+            Node h = head;
+            if (h != null &amp;&amp; h.waitStatus != 0)
+                unparkSuccessor(h);
+            return true;
+        }
+        return false;
+    }
+</code></pre>
+
+<p>先来看tryRelease</p>
+
+<pre><code class="java">
+ protected final boolean tryRelease(int releases) {
+            int c = getState() - releases;
+            if (Thread.currentThread() != getExclusiveOwnerThread())
+                throw new IllegalMonitorStateException();
+            boolean free = false;
+            if (c == 0) {
+                free = true;
+                setExclusiveOwnerThread(null);
+            }
+            setState(c);
+            return free;
+        }
+</code></pre>
+
+<p>从上面的代码来看，当state变为0，tryRelease才会返回true，release才会unpark第二个线程节点。这个时候回到acquireQueued方法，第二节点被unpark之后。仍在for循环里，这个时候把如果tryRelease返回true，即等待队列的第二个节点获得锁，进入if分支，把头结点设置为当前节点，并直接返回。等待队列的其他节点，依次类推。</p>
+
+<p>下面来说说公平策略好非公平策略的区别。跟Semaphore一样，公平策略会判断线程等待队列中是否有线程再等待，如果有则将当前线程放入等待队列，直到被被唤醒。但非公平策略是，不过当前是否有线程再等待，都尝试去获取锁，这样当前线程可能会优先获取到锁，所以是不公平的。</p>
+
+<p>另外，condition也是并发场景中用的较多的工具之一。我们来看看condition是怎么做的。首先看await方法</p>
+
+<pre><code class="java ">
+        public final void await() throws InterruptedException {
+            if (Thread.interrupted())
+                throw new InterruptedException();
+            Node node = addConditionWaiter();
+            int savedState = fullyRelease(node);
+            int interruptMode = 0;
+            while (!isOnSyncQueue(node)) {
+                LockSupport.park(this);
+                if ((interruptMode = checkInterruptWhileWaiting(node)) != 0)
+                    break;
+            }
+            if (acquireQueued(node, savedState) &amp;&amp; interruptMode != THROW_IE)
+                interruptMode = REINTERRUPT;
+            if (node.nextWaiter != null) // clean up if cancelled
+                unlinkCancelledWaiters();
+            if (interruptMode != 0)
+                reportInterruptAfterWait(interruptMode);
+        }
+</code></pre>
+
+<p>首先，addConditionWaiter再condition队列为空的时候，构建condition队列，若condition队列不为空，则把当前线程节点添加到队尾。后面while循环里判断，当前节点是否已经已到线程同步队列。如果没有移动到线程同步队列，则park当前线程节点，至此线程则被阻塞住了，直到被唤醒，才会往下走。</p>
+
+<pre><code class="java">
+    private int checkInterruptWhileWaiting(Node node) {
+            return Thread.interrupted() ?
+                (transferAfterCancelledWait(node) ? THROW_IE : REINTERRUPT) :
+                0;
+        }
+</code></pre>
+
+<p>如果线程没有被中断，则会继续循环。再次判断当前节点是否在线程同步队列，如果在同步队列，则会结束循环。从后面代码知道，线程会在<strong>signal的时候移动到同步队列</strong>。接着，会调用acquireQueued判断同步队列能否获得锁，不能则会被阻塞住。否则，会继续往下走。</p>
+
+<p>await的整个流程就如上面分析，下面来看看sigal的流程。</p>
+
+<pre><code class="java">
+    public final void signal() {
+            if (!isHeldExclusively())
+                throw new IllegalMonitorStateException();
+            Node first = firstWaiter;
+            if (first != null)
+                doSignal(first);
+        }
+</code></pre>
+
+<p>简单的判断当前线程是否持有锁，如果是则往下走。</p>
+
+<pre><code class="java">
+        private void doSignal(Node first) {
+            do {
+                if ( (firstWaiter = first.nextWaiter) == null)
+                    lastWaiter = null;
+                first.nextWaiter = null;
+            } while (!transferForSignal(first) &amp;&amp;
+                     (first = firstWaiter) != null);
+        }
+</code></pre>
+
+<p>从上面的代码来看，doSignal从第一个节点开始调用transferForSignal</p>
+
+<pre><code class="java ">
+  final boolean transferForSignal(Node node) {
+        /*
+         * If cannot change waitStatus, the node has been cancelled.
+         */
+        if (!compareAndSetWaitStatus(node, Node.CONDITION, 0))
+            return false;
+
+        /*
+         * Splice onto queue and try to set waitStatus of predecessor to
+         * indicate that thread is (probably) waiting. If cancelled or
+         * attempt to set waitStatus fails, wake up to resync (in which
+         * case the waitStatus can be transiently and harmlessly wrong).
+         */
+        Node p = enq(node);
+        int ws = p.waitStatus;
+        if (ws &gt; 0 || !compareAndSetWaitStatus(p, ws, Node.SIGNAL))
+            LockSupport.unpark(node.thread);
+        return true;
+    }
+</code></pre>
+
+<p>首先，尝试将node的state由-2更新为0，如果更新不成功，则继续循环，尝试唤醒下个节点;如果，更新成功，则将当前节点添加到线程同步队列。然后，把节点状态更新为-1，返回true，这样doSignal就做完了。</p>
+
+<p>ReentrantLock其实就是实现了线程间最基本的互斥和通信机制。lock作为一种互斥机制比内置互斥机制更灵活</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Jdk源码阅读之semaphore]]></title>
+    <link href="http://januscj.github.io/2015/09/04/jdk-yuan-ma-zhi-semaphore/"/>
+    <updated>2015-09-04T15:18:34+08:00</updated>
+    <id>http://januscj.github.io/2015/09/04/jdk-yuan-ma-zhi-semaphore</id>
+    <content type="html"><![CDATA[<p>前面看过AQS的源码后，对AQS的原理有了叫深入的理解，现在可以看看基于AQS的各种并发工具了，Semaphore是其中使用最普遍的一个。它的源码如下:</p>
+
+<pre><code class="java">
+public class Semaphore implements java.io.Serializable {
+    private static final long serialVersionUID = -3222578661600680210L;
+    /** All mechanics via AbstractQueuedSynchronizer subclass */
+    private final Sync sync;
+
+    /**
+     * Synchronization implementation for semaphore.  Uses AQS state
+     * to represent permits. Subclassed into fair and nonfair
+     * versions.
+     */
+    abstract static class Sync extends AbstractQueuedSynchronizer {
+        private static final long serialVersionUID = 1192457210091910933L;
+
+        Sync(int permits) {
+            setState(permits);
+        }
+
+        final int getPermits() {
+            return getState();
+        }
+
+        final int nonfairTryAcquireShared(int acquires) {
+            for (;;) {
+                int available = getState();
+                int remaining = available - acquires;
+                if (remaining &lt; 0 ||
+                    compareAndSetState(available, remaining))
+                    return remaining;
+            }
+        }
+
+        protected final boolean tryReleaseShared(int releases) {
+            for (;;) {
+                int current = getState();
+                int next = current + releases;
+                if (next &lt; current) // overflow
+                    throw new Error("Maximum permit count exceeded");
+                if (compareAndSetState(current, next))
+                    return true;
+            }
+        }
+
+        final void reducePermits(int reductions) {
+            for (;;) {
+                int current = getState();
+                int next = current - reductions;
+                if (next &gt; current) // underflow
+                    throw new Error("Permit count underflow");
+                if (compareAndSetState(current, next))
+                    return;
+            }
+        }
+
+        final int drainPermits() {
+            for (;;) {
+                int current = getState();
+                if (current == 0 || compareAndSetState(current, 0))
+                    return current;
+            }
+        }
+    }
+
+    /**
+     * NonFair version
+     */
+    static final class NonfairSync extends Sync {
+        private static final long serialVersionUID = -2694183684443567898L;
+
+        NonfairSync(int permits) {
+            super(permits);
+        }
+
+        protected int tryAcquireShared(int acquires) {
+            return nonfairTryAcquireShared(acquires);
+        }
+    }
+
+    /**
+     * Fair version
+     */
+    static final class FairSync extends Sync {
+        private static final long serialVersionUID = 2014338818796000944L;
+
+        FairSync(int permits) {
+            super(permits);
+        }
+
+        protected int tryAcquireShared(int acquires) {
+            for (;;) {
+                if (hasQueuedPredecessors())
+                    return -1;
+                int available = getState();
+                int remaining = available - acquires;
+                if (remaining &lt; 0 ||
+                    compareAndSetState(available, remaining))
+                    return remaining;
+            }
+        }
+    }
+</code></pre>
+
+<p>跟CountDownLatch一样，Semaphore也是使用组合的方式来使用AQS，内部定义了两个AQS之类，NonfairSync和FairSync。他们的区别是什么呢？稍后详解。使用下面的构造函数，创建的Semaphore对象是使用NonfairSync方式</p>
+
+<pre><code class="java">
+    public Semaphore(int permits) {
+        sync = new NonfairSync(permits);
+    }
+</code></pre>
+
+<p>NonfairSync类</p>
+
+<pre><code class="java">
+  static final class NonfairSync extends Sync {
+        private static final long serialVersionUID = -2694183684443567898L;
+
+        NonfairSync(int permits) {
+            super(permits);
+        }
+
+        protected int tryAcquireShared(int acquires) {
+            return nonfairTryAcquireShared(acquires);
+        }
+    }
+</code></pre>
+
+<p>Sync类</p>
+
+<pre><code class="java">
+   abstract static class Sync extends AbstractQueuedSynchronizer {
+        private static final long serialVersionUID = 1192457210091910933L;
+
+        Sync(int permits) {
+            setState(permits);
+        }
+
+        final int getPermits() {
+            return getState();
+        }
+
+        final int nonfairTryAcquireShared(int acquires) {
+            for (;;) {
+                int available = getState();
+                int remaining = available - acquires;
+                if (remaining &lt; 0 ||
+                    compareAndSetState(available, remaining))
+                    return remaining;
+            }
+        }
+
+        protected final boolean tryReleaseShared(int releases) {
+            for (;;) {
+                int current = getState();
+                int next = current + releases;
+                if (next &lt; current) // overflow
+                    throw new Error("Maximum permit count exceeded");
+                if (compareAndSetState(current, next))
+                    return true;
+            }
+        }
+
+        final void reducePermits(int reductions) {
+            for (;;) {
+                int current = getState();
+                int next = current - reductions;
+                if (next &gt; current) // underflow
+                    throw new Error("Permit count underflow");
+                if (compareAndSetState(current, next))
+                    return;
+            }
+        }
+
+        final int drainPermits() {
+            for (;;) {
+                int current = getState();
+                if (current == 0 || compareAndSetState(current, 0))
+                    return current;
+            }
+        }
+    }
+</code></pre>
+
+<p>通过nonfairTryAcquireShared方法知道，线程在未获取到许可的情况下，线程会被方法等待队列。<strong>这种情况下，如果有许可释放出来，另外的线程可能比等待队列的线程先获取到许可</strong>，所以是nonfair的。我们来看看释放许可的方法</p>
+
+<pre><code class="java">
+       protected final boolean tryReleaseShared(int releases) {
+            for (;;) {
+                int current = getState();
+                int next = current + releases;
+                if (next &lt; current) // overflow
+                    throw new Error("Maximum permit count exceeded");
+                if (compareAndSetState(current, next))
+                    return true;
+            }
+        }
+</code></pre>
+
+<p>释放许可也是简单for循环.我们知道之前CountDownLatch是会由前面的节点唤醒后面的节点，直到整个线程队列都被唤醒。那Semaphore如果也是这样，不就有问题么？那Semaphore是怎么样的呢？从上面的tryReleaseShared代码知道，每次cas成功,tryReleaseShared都会返回true，这样会"唤醒"第二个节点，从AQS的doAcquireSharedInterruptibly方法知道，第二个节点唤醒后，仍在for循环里，在tryAcquireShared返回大于零(即有可用的许可)之前，第二个节点仍会被park住。<strong>这里我觉得tryReleaseShared方法做得不够好，应该是在有许可的时候，再返回true。这样可以避免线程无意义的unpark、park</strong></p>
+
+<p>现在，我们来看看nonfair和fair的区别。下面是fair类的代码</p>
+
+<pre><code class="java">
+   static final class FairSync extends Sync {
+        private static final long serialVersionUID = 2014338818796000944L;
+
+        FairSync(int permits) {
+            super(permits);
+        }
+
+        protected int tryAcquireShared(int acquires) {
+            for (;;) {
+                if (hasQueuedPredecessors())
+                    return -1;
+                int available = getState();
+                int remaining = available - acquires;
+                if (remaining &lt; 0 ||
+                    compareAndSetState(available, remaining))
+                    return remaining;
+            }
+        }
+    }
+</code></pre>
+
+<p>FairSync和NonfairSync的区别是在获取许可的地方，FairSync获取许可的时候，hasQueuedPredecessors使用这个方法判断阻塞队列中是否有线程在排队</p>
+
+<pre><code class="java">
+    public final boolean hasQueuedPredecessors() {
+        // The correctness of this depends on head being initialized
+        // before tail and on head.next being accurate if the current
+        // thread is first in queue.
+        Node t = tail; // Read fields in reverse initialization order
+        Node h = head;
+        Node s;
+        return h != t &amp;&amp;
+            ((s = h.next) == null || s.thread != Thread.currentThread());
+    }
+</code></pre>
+
+<p>FairSync的做法跟NonfairSync的区别就是，在许可用完的情况下，FairSync是把线程阻塞住，放入等待队列,而NonfairSync的做法是，不管当前是否有线程在排队，NonfairSync始终重试去获取许可，这会导致当前线程可能会优先于等待队列中的线程获得许可。</p>
+]]></content>
+  </entry>
+  
+</feed>

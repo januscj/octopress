@@ -1,0 +1,100 @@
+<div class="highlight"><pre><span class="kd">public</span> <span class="kd">class</span> <span class="nc">Semaphore</span> <span class="kd">implements</span> <span class="n">java</span><span class="o">.</span><span class="na">io</span><span class="o">.</span><span class="na">Serializable</span> <span class="o">{</span>
+    <span class="kd">private</span> <span class="kd">static</span> <span class="kd">final</span> <span class="kt">long</span> <span class="n">serialVersionUID</span> <span class="o">=</span> <span class="o">-</span><span class="mi">3222578661600680210L</span><span class="o">;</span>
+    <span class="cm">/** All mechanics via AbstractQueuedSynchronizer subclass */</span>
+    <span class="kd">private</span> <span class="kd">final</span> <span class="n">Sync</span> <span class="n">sync</span><span class="o">;</span>
+
+    <span class="cm">/**</span>
+<span class="cm">     * Synchronization implementation for semaphore.  Uses AQS state</span>
+<span class="cm">     * to represent permits. Subclassed into fair and nonfair</span>
+<span class="cm">     * versions.</span>
+<span class="cm">     */</span>
+    <span class="kd">abstract</span> <span class="kd">static</span> <span class="kd">class</span> <span class="nc">Sync</span> <span class="kd">extends</span> <span class="n">AbstractQueuedSynchronizer</span> <span class="o">{</span>
+        <span class="kd">private</span> <span class="kd">static</span> <span class="kd">final</span> <span class="kt">long</span> <span class="n">serialVersionUID</span> <span class="o">=</span> <span class="mi">1192457210091910933L</span><span class="o">;</span>
+
+        <span class="n">Sync</span><span class="o">(</span><span class="kt">int</span> <span class="n">permits</span><span class="o">)</span> <span class="o">{</span>
+            <span class="n">setState</span><span class="o">(</span><span class="n">permits</span><span class="o">);</span>
+        <span class="o">}</span>
+
+        <span class="kd">final</span> <span class="kt">int</span> <span class="nf">getPermits</span><span class="o">()</span> <span class="o">{</span>
+            <span class="k">return</span> <span class="nf">getState</span><span class="o">();</span>
+        <span class="o">}</span>
+
+        <span class="kd">final</span> <span class="kt">int</span> <span class="nf">nonfairTryAcquireShared</span><span class="o">(</span><span class="kt">int</span> <span class="n">acquires</span><span class="o">)</span> <span class="o">{</span>
+            <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+                <span class="kt">int</span> <span class="n">available</span> <span class="o">=</span> <span class="n">getState</span><span class="o">();</span>
+                <span class="kt">int</span> <span class="n">remaining</span> <span class="o">=</span> <span class="n">available</span> <span class="o">-</span> <span class="n">acquires</span><span class="o">;</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">remaining</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="o">||</span>
+                    <span class="n">compareAndSetState</span><span class="o">(</span><span class="n">available</span><span class="o">,</span> <span class="n">remaining</span><span class="o">))</span>
+                    <span class="k">return</span> <span class="n">remaining</span><span class="o">;</span>
+            <span class="o">}</span>
+        <span class="o">}</span>
+
+        <span class="kd">protected</span> <span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">tryReleaseShared</span><span class="o">(</span><span class="kt">int</span> <span class="n">releases</span><span class="o">)</span> <span class="o">{</span>
+            <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+                <span class="kt">int</span> <span class="n">current</span> <span class="o">=</span> <span class="n">getState</span><span class="o">();</span>
+                <span class="kt">int</span> <span class="n">next</span> <span class="o">=</span> <span class="n">current</span> <span class="o">+</span> <span class="n">releases</span><span class="o">;</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">next</span> <span class="o">&lt;</span> <span class="n">current</span><span class="o">)</span> <span class="c1">// overflow</span>
+                    <span class="k">throw</span> <span class="k">new</span> <span class="nf">Error</span><span class="o">(</span><span class="s">&quot;Maximum permit count exceeded&quot;</span><span class="o">);</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">compareAndSetState</span><span class="o">(</span><span class="n">current</span><span class="o">,</span> <span class="n">next</span><span class="o">))</span>
+                    <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+            <span class="o">}</span>
+        <span class="o">}</span>
+
+        <span class="kd">final</span> <span class="kt">void</span> <span class="nf">reducePermits</span><span class="o">(</span><span class="kt">int</span> <span class="n">reductions</span><span class="o">)</span> <span class="o">{</span>
+            <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+                <span class="kt">int</span> <span class="n">current</span> <span class="o">=</span> <span class="n">getState</span><span class="o">();</span>
+                <span class="kt">int</span> <span class="n">next</span> <span class="o">=</span> <span class="n">current</span> <span class="o">-</span> <span class="n">reductions</span><span class="o">;</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">next</span> <span class="o">&gt;</span> <span class="n">current</span><span class="o">)</span> <span class="c1">// underflow</span>
+                    <span class="k">throw</span> <span class="k">new</span> <span class="nf">Error</span><span class="o">(</span><span class="s">&quot;Permit count underflow&quot;</span><span class="o">);</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">compareAndSetState</span><span class="o">(</span><span class="n">current</span><span class="o">,</span> <span class="n">next</span><span class="o">))</span>
+                    <span class="k">return</span><span class="o">;</span>
+            <span class="o">}</span>
+        <span class="o">}</span>
+
+        <span class="kd">final</span> <span class="kt">int</span> <span class="nf">drainPermits</span><span class="o">()</span> <span class="o">{</span>
+            <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+                <span class="kt">int</span> <span class="n">current</span> <span class="o">=</span> <span class="n">getState</span><span class="o">();</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">current</span> <span class="o">==</span> <span class="mi">0</span> <span class="o">||</span> <span class="n">compareAndSetState</span><span class="o">(</span><span class="n">current</span><span class="o">,</span> <span class="mi">0</span><span class="o">))</span>
+                    <span class="k">return</span> <span class="n">current</span><span class="o">;</span>
+            <span class="o">}</span>
+        <span class="o">}</span>
+    <span class="o">}</span>
+
+    <span class="cm">/**</span>
+<span class="cm">     * NonFair version</span>
+<span class="cm">     */</span>
+    <span class="kd">static</span> <span class="kd">final</span> <span class="kd">class</span> <span class="nc">NonfairSync</span> <span class="kd">extends</span> <span class="n">Sync</span> <span class="o">{</span>
+        <span class="kd">private</span> <span class="kd">static</span> <span class="kd">final</span> <span class="kt">long</span> <span class="n">serialVersionUID</span> <span class="o">=</span> <span class="o">-</span><span class="mi">2694183684443567898L</span><span class="o">;</span>
+
+        <span class="n">NonfairSync</span><span class="o">(</span><span class="kt">int</span> <span class="n">permits</span><span class="o">)</span> <span class="o">{</span>
+            <span class="kd">super</span><span class="o">(</span><span class="n">permits</span><span class="o">);</span>
+        <span class="o">}</span>
+
+        <span class="kd">protected</span> <span class="kt">int</span> <span class="nf">tryAcquireShared</span><span class="o">(</span><span class="kt">int</span> <span class="n">acquires</span><span class="o">)</span> <span class="o">{</span>
+            <span class="k">return</span> <span class="nf">nonfairTryAcquireShared</span><span class="o">(</span><span class="n">acquires</span><span class="o">);</span>
+        <span class="o">}</span>
+    <span class="o">}</span>
+
+    <span class="cm">/**</span>
+<span class="cm">     * Fair version</span>
+<span class="cm">     */</span>
+    <span class="kd">static</span> <span class="kd">final</span> <span class="kd">class</span> <span class="nc">FairSync</span> <span class="kd">extends</span> <span class="n">Sync</span> <span class="o">{</span>
+        <span class="kd">private</span> <span class="kd">static</span> <span class="kd">final</span> <span class="kt">long</span> <span class="n">serialVersionUID</span> <span class="o">=</span> <span class="mi">2014338818796000944L</span><span class="o">;</span>
+
+        <span class="n">FairSync</span><span class="o">(</span><span class="kt">int</span> <span class="n">permits</span><span class="o">)</span> <span class="o">{</span>
+            <span class="kd">super</span><span class="o">(</span><span class="n">permits</span><span class="o">);</span>
+        <span class="o">}</span>
+
+        <span class="kd">protected</span> <span class="kt">int</span> <span class="nf">tryAcquireShared</span><span class="o">(</span><span class="kt">int</span> <span class="n">acquires</span><span class="o">)</span> <span class="o">{</span>
+            <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">hasQueuedPredecessors</span><span class="o">())</span>
+                    <span class="k">return</span> <span class="o">-</span><span class="mi">1</span><span class="o">;</span>
+                <span class="kt">int</span> <span class="n">available</span> <span class="o">=</span> <span class="n">getState</span><span class="o">();</span>
+                <span class="kt">int</span> <span class="n">remaining</span> <span class="o">=</span> <span class="n">available</span> <span class="o">-</span> <span class="n">acquires</span><span class="o">;</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">remaining</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="o">||</span>
+                    <span class="n">compareAndSetState</span><span class="o">(</span><span class="n">available</span><span class="o">,</span> <span class="n">remaining</span><span class="o">))</span>
+                    <span class="k">return</span> <span class="n">remaining</span><span class="o">;</span>
+            <span class="o">}</span>
+        <span class="o">}</span>
+    <span class="o">}</span>
+</pre></div>

@@ -1,0 +1,21 @@
+<div class="highlight"><pre>    <span class="nd">@Override</span>
+    <span class="kd">public</span> <span class="n">ChannelHandlerContext</span> <span class="nf">fireChannelRead</span><span class="o">(</span><span class="kd">final</span> <span class="n">Object</span> <span class="n">msg</span><span class="o">)</span> <span class="o">{</span>
+        <span class="k">if</span> <span class="o">(</span><span class="n">msg</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
+            <span class="k">throw</span> <span class="k">new</span> <span class="nf">NullPointerException</span><span class="o">(</span><span class="s">&quot;msg&quot;</span><span class="o">);</span>
+        <span class="o">}</span>
+
+        <span class="kd">final</span> <span class="n">AbstractChannelHandlerContext</span> <span class="n">next</span> <span class="o">=</span> <span class="n">findContextInbound</span><span class="o">();</span>
+        <span class="n">EventExecutor</span> <span class="n">executor</span> <span class="o">=</span> <span class="n">next</span><span class="o">.</span><span class="na">executor</span><span class="o">();</span>
+        <span class="k">if</span> <span class="o">(</span><span class="n">executor</span><span class="o">.</span><span class="na">inEventLoop</span><span class="o">())</span> <span class="o">{</span>
+            <span class="n">next</span><span class="o">.</span><span class="na">invokeChannelRead</span><span class="o">(</span><span class="n">msg</span><span class="o">);</span>
+        <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+            <span class="n">executor</span><span class="o">.</span><span class="na">execute</span><span class="o">(</span><span class="k">new</span> <span class="nf">OneTimeTask</span><span class="o">()</span> <span class="o">{</span>
+                <span class="nd">@Override</span>
+                <span class="kd">public</span> <span class="kt">void</span> <span class="nf">run</span><span class="o">()</span> <span class="o">{</span>
+                    <span class="n">next</span><span class="o">.</span><span class="na">invokeChannelRead</span><span class="o">(</span><span class="n">msg</span><span class="o">);</span>
+                <span class="o">}</span>
+            <span class="o">});</span>
+        <span class="o">}</span>
+        <span class="k">return</span> <span class="k">this</span><span class="o">;</span>
+    <span class="o">}</span>
+</pre></div>

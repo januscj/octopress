@@ -1,0 +1,28 @@
+<div class="highlight"><pre><span class="kd">private</span> <span class="kd">static</span> <span class="kt">boolean</span> <span class="nf">shouldParkAfterFailedAcquire</span><span class="o">(</span><span class="n">Node</span> <span class="n">pred</span><span class="o">,</span> <span class="n">Node</span> <span class="n">node</span><span class="o">)</span> <span class="o">{</span>
+        <span class="kt">int</span> <span class="n">ws</span> <span class="o">=</span> <span class="n">pred</span><span class="o">.</span><span class="na">waitStatus</span><span class="o">;</span>
+        <span class="k">if</span> <span class="o">(</span><span class="n">ws</span> <span class="o">==</span> <span class="n">Node</span><span class="o">.</span><span class="na">SIGNAL</span><span class="o">)</span>
+            <span class="cm">/*</span>
+<span class="cm">             * This node has already set status asking a release</span>
+<span class="cm">             * to signal it, so it can safely park.</span>
+<span class="cm">             */</span>
+            <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+        <span class="k">if</span> <span class="o">(</span><span class="n">ws</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+            <span class="cm">/*</span>
+<span class="cm">             * Predecessor was cancelled. Skip over predecessors and</span>
+<span class="cm">             * indicate retry.</span>
+<span class="cm">             */</span>
+            <span class="k">do</span> <span class="o">{</span>
+                <span class="n">node</span><span class="o">.</span><span class="na">prev</span> <span class="o">=</span> <span class="n">pred</span> <span class="o">=</span> <span class="n">pred</span><span class="o">.</span><span class="na">prev</span><span class="o">;</span>
+            <span class="o">}</span> <span class="k">while</span> <span class="o">(</span><span class="n">pred</span><span class="o">.</span><span class="na">waitStatus</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="o">);</span>
+            <span class="n">pred</span><span class="o">.</span><span class="na">next</span> <span class="o">=</span> <span class="n">node</span><span class="o">;</span>
+        <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+            <span class="cm">/*</span>
+<span class="cm">             * waitStatus must be 0 or PROPAGATE.  Indicate that we</span>
+<span class="cm">             * need a signal, but don&#39;t park yet.  Caller will need to</span>
+<span class="cm">             * retry to make sure it cannot acquire before parking.</span>
+<span class="cm">             */</span>
+            <span class="n">compareAndSetWaitStatus</span><span class="o">(</span><span class="n">pred</span><span class="o">,</span> <span class="n">ws</span><span class="o">,</span> <span class="n">Node</span><span class="o">.</span><span class="na">SIGNAL</span><span class="o">);</span>
+        <span class="o">}</span>
+        <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+    <span class="o">}</span>
+</pre></div>

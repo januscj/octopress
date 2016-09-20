@@ -1,0 +1,25 @@
+<div class="highlight"><pre>    <span class="kd">private</span> <span class="kt">void</span> <span class="nf">setHeadAndPropagate</span><span class="o">(</span><span class="n">Node</span> <span class="n">node</span><span class="o">,</span> <span class="kt">long</span> <span class="n">propagate</span><span class="o">)</span> <span class="o">{</span>
+        <span class="n">Node</span> <span class="n">h</span> <span class="o">=</span> <span class="n">head</span><span class="o">;</span> <span class="c1">// Record old head for check below</span>
+        <span class="n">setHead</span><span class="o">(</span><span class="n">node</span><span class="o">);</span>
+        <span class="cm">/*</span>
+<span class="cm">         * Try to signal next queued node if:</span>
+<span class="cm">         *   Propagation was indicated by caller,</span>
+<span class="cm">         *     or was recorded (as h.waitStatus) by a previous operation</span>
+<span class="cm">         *     (note: this uses sign-check of waitStatus because</span>
+<span class="cm">         *      PROPAGATE status may transition to SIGNAL.)</span>
+<span class="cm">         * and</span>
+<span class="cm">         *   The next node is waiting in shared mode,</span>
+<span class="cm">         *     or we don&#39;t know, because it appears null</span>
+<span class="cm">         *</span>
+<span class="cm">         * The conservatism in both of these checks may cause</span>
+<span class="cm">         * unnecessary wake-ups, but only when there are multiple</span>
+<span class="cm">         * racing acquires/releases, so most need signals now or soon</span>
+<span class="cm">         * anyway.</span>
+<span class="cm">         */</span>
+        <span class="k">if</span> <span class="o">(</span><span class="n">propagate</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="o">||</span> <span class="n">h</span> <span class="o">==</span> <span class="kc">null</span> <span class="o">||</span> <span class="n">h</span><span class="o">.</span><span class="na">waitStatus</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+            <span class="n">Node</span> <span class="n">s</span> <span class="o">=</span> <span class="n">node</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>
+            <span class="k">if</span> <span class="o">(</span><span class="n">s</span> <span class="o">==</span> <span class="kc">null</span> <span class="o">||</span> <span class="n">s</span><span class="o">.</span><span class="na">isShared</span><span class="o">())</span>
+                <span class="n">doReleaseShared</span><span class="o">();</span>
+        <span class="o">}</span>
+    <span class="o">}</span>
+</pre></div>

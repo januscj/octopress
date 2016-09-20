@@ -1,0 +1,20 @@
+<div class="highlight"><pre>  <span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">transferForSignal</span><span class="o">(</span><span class="n">Node</span> <span class="n">node</span><span class="o">)</span> <span class="o">{</span>
+        <span class="cm">/*</span>
+<span class="cm">         * If cannot change waitStatus, the node has been cancelled.</span>
+<span class="cm">         */</span>
+        <span class="k">if</span> <span class="o">(!</span><span class="n">compareAndSetWaitStatus</span><span class="o">(</span><span class="n">node</span><span class="o">,</span> <span class="n">Node</span><span class="o">.</span><span class="na">CONDITION</span><span class="o">,</span> <span class="mi">0</span><span class="o">))</span>
+            <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+
+        <span class="cm">/*</span>
+<span class="cm">         * Splice onto queue and try to set waitStatus of predecessor to</span>
+<span class="cm">         * indicate that thread is (probably) waiting. If cancelled or</span>
+<span class="cm">         * attempt to set waitStatus fails, wake up to resync (in which</span>
+<span class="cm">         * case the waitStatus can be transiently and harmlessly wrong).</span>
+<span class="cm">         */</span>
+        <span class="n">Node</span> <span class="n">p</span> <span class="o">=</span> <span class="n">enq</span><span class="o">(</span><span class="n">node</span><span class="o">);</span>
+        <span class="kt">int</span> <span class="n">ws</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="na">waitStatus</span><span class="o">;</span>
+        <span class="k">if</span> <span class="o">(</span><span class="n">ws</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="o">||</span> <span class="o">!</span><span class="n">compareAndSetWaitStatus</span><span class="o">(</span><span class="n">p</span><span class="o">,</span> <span class="n">ws</span><span class="o">,</span> <span class="n">Node</span><span class="o">.</span><span class="na">SIGNAL</span><span class="o">))</span>
+            <span class="n">LockSupport</span><span class="o">.</span><span class="na">unpark</span><span class="o">(</span><span class="n">node</span><span class="o">.</span><span class="na">thread</span><span class="o">);</span>
+        <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+    <span class="o">}</span>
+</pre></div>

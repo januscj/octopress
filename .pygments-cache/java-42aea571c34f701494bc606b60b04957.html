@@ -1,0 +1,37 @@
+<div class="highlight"><pre><span class="kd">private</span> <span class="kd">static</span> <span class="kt">void</span> <span class="nf">processSelectedKey</span><span class="o">(</span><span class="n">SelectionKey</span> <span class="n">k</span><span class="o">,</span> <span class="n">AbstractNioChannel</span> <span class="n">ch</span><span class="o">)</span> <span class="o">{</span>
+        <span class="kd">final</span> <span class="n">NioUnsafe</span> <span class="n">unsafe</span> <span class="o">=</span> <span class="n">ch</span><span class="o">.</span><span class="na">unsafe</span><span class="o">();</span>
+        <span class="k">if</span> <span class="o">(!</span><span class="n">k</span><span class="o">.</span><span class="na">isValid</span><span class="o">())</span> <span class="o">{</span>
+            <span class="c1">// close the channel if the key is not valid anymore</span>
+            <span class="n">unsafe</span><span class="o">.</span><span class="na">close</span><span class="o">(</span><span class="n">unsafe</span><span class="o">.</span><span class="na">voidPromise</span><span class="o">());</span>
+            <span class="k">return</span><span class="o">;</span>
+        <span class="o">}</span>
+
+        <span class="k">try</span> <span class="o">{</span>
+            <span class="kt">int</span> <span class="n">readyOps</span> <span class="o">=</span> <span class="n">k</span><span class="o">.</span><span class="na">readyOps</span><span class="o">();</span>
+            <span class="c1">// Also check for readOps of 0 to workaround possible JDK bug which may otherwise lead</span>
+            <span class="c1">// to a spin loop</span>
+            <span class="k">if</span> <span class="o">((</span><span class="n">readyOps</span> <span class="o">&amp;</span> <span class="o">(</span><span class="n">SelectionKey</span><span class="o">.</span><span class="na">OP_READ</span> <span class="o">|</span> <span class="n">SelectionKey</span><span class="o">.</span><span class="na">OP_ACCEPT</span><span class="o">))</span> <span class="o">!=</span> <span class="mi">0</span> <span class="o">||</span> <span class="n">readyOps</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+                <span class="n">unsafe</span><span class="o">.</span><span class="na">read</span><span class="o">();</span>
+                <span class="k">if</span> <span class="o">(!</span><span class="n">ch</span><span class="o">.</span><span class="na">isOpen</span><span class="o">())</span> <span class="o">{</span>
+                    <span class="c1">// Connection already closed - no need to handle write.</span>
+                    <span class="k">return</span><span class="o">;</span>
+                <span class="o">}</span>
+            <span class="o">}</span>
+            <span class="k">if</span> <span class="o">((</span><span class="n">readyOps</span> <span class="o">&amp;</span> <span class="n">SelectionKey</span><span class="o">.</span><span class="na">OP_WRITE</span><span class="o">)</span> <span class="o">!=</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+                <span class="c1">// Call forceFlush which will also take care of clear the OP_WRITE once there is nothing left to write</span>
+                <span class="n">ch</span><span class="o">.</span><span class="na">unsafe</span><span class="o">().</span><span class="na">forceFlush</span><span class="o">();</span>
+            <span class="o">}</span>
+            <span class="k">if</span> <span class="o">((</span><span class="n">readyOps</span> <span class="o">&amp;</span> <span class="n">SelectionKey</span><span class="o">.</span><span class="na">OP_CONNECT</span><span class="o">)</span> <span class="o">!=</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+                <span class="c1">// remove OP_CONNECT as otherwise Selector.select(..) will always return without blocking</span>
+                <span class="c1">// See https://github.com/netty/netty/issues/924</span>
+                <span class="kt">int</span> <span class="n">ops</span> <span class="o">=</span> <span class="n">k</span><span class="o">.</span><span class="na">interestOps</span><span class="o">();</span>
+                <span class="n">ops</span> <span class="o">&amp;=</span> <span class="o">~</span><span class="n">SelectionKey</span><span class="o">.</span><span class="na">OP_CONNECT</span><span class="o">;</span>
+                <span class="n">k</span><span class="o">.</span><span class="na">interestOps</span><span class="o">(</span><span class="n">ops</span><span class="o">);</span>
+
+                <span class="n">unsafe</span><span class="o">.</span><span class="na">finishConnect</span><span class="o">();</span>
+            <span class="o">}</span>
+        <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">CancelledKeyException</span> <span class="n">ignored</span><span class="o">)</span> <span class="o">{</span>
+            <span class="n">unsafe</span><span class="o">.</span><span class="na">close</span><span class="o">(</span><span class="n">unsafe</span><span class="o">.</span><span class="na">voidPromise</span><span class="o">());</span>
+        <span class="o">}</span>
+    <span class="o">}</span>
+</pre></div>

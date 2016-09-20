@@ -1,0 +1,30 @@
+<div class="highlight"><pre><span class="kd">private</span> <span class="kt">void</span> <span class="nf">doReleaseShared</span><span class="o">()</span> <span class="o">{</span>
+        <span class="cm">/*</span>
+<span class="cm">         * Ensure that a release propagates, even if there are other</span>
+<span class="cm">         * in-progress acquires/releases.  This proceeds in the usual</span>
+<span class="cm">         * way of trying to unparkSuccessor of head if it needs</span>
+<span class="cm">         * signal. But if it does not, status is set to PROPAGATE to</span>
+<span class="cm">         * ensure that upon release, propagation continues.</span>
+<span class="cm">         * Additionally, we must loop in case a new node is added</span>
+<span class="cm">         * while we are doing this. Also, unlike other uses of</span>
+<span class="cm">         * unparkSuccessor, we need to know if CAS to reset status</span>
+<span class="cm">         * fails, if so rechecking.</span>
+<span class="cm">         */</span>
+        <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+            <span class="n">Node</span> <span class="n">h</span> <span class="o">=</span> <span class="n">head</span><span class="o">;</span>
+            <span class="k">if</span> <span class="o">(</span><span class="n">h</span> <span class="o">!=</span> <span class="kc">null</span> <span class="o">&amp;&amp;</span> <span class="n">h</span> <span class="o">!=</span> <span class="n">tail</span><span class="o">)</span> <span class="o">{</span>
+                <span class="kt">int</span> <span class="n">ws</span> <span class="o">=</span> <span class="n">h</span><span class="o">.</span><span class="na">waitStatus</span><span class="o">;</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">ws</span> <span class="o">==</span> <span class="n">Node</span><span class="o">.</span><span class="na">SIGNAL</span><span class="o">)</span> <span class="o">{</span>
+                    <span class="k">if</span> <span class="o">(!</span><span class="n">compareAndSetWaitStatus</span><span class="o">(</span><span class="n">h</span><span class="o">,</span> <span class="n">Node</span><span class="o">.</span><span class="na">SIGNAL</span><span class="o">,</span> <span class="mi">0</span><span class="o">))</span>
+                        <span class="k">continue</span><span class="o">;</span>            <span class="c1">// loop to recheck cases</span>
+                    <span class="n">unparkSuccessor</span><span class="o">(</span><span class="n">h</span><span class="o">);</span>
+                <span class="o">}</span>
+                <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">ws</span> <span class="o">==</span> <span class="mi">0</span> <span class="o">&amp;&amp;</span>
+                         <span class="o">!</span><span class="n">compareAndSetWaitStatus</span><span class="o">(</span><span class="n">h</span><span class="o">,</span> <span class="mi">0</span><span class="o">,</span> <span class="n">Node</span><span class="o">.</span><span class="na">PROPAGATE</span><span class="o">))</span>
+                    <span class="k">continue</span><span class="o">;</span>                <span class="c1">// loop on failed CAS</span>
+            <span class="o">}</span>
+            <span class="k">if</span> <span class="o">(</span><span class="n">h</span> <span class="o">==</span> <span class="n">head</span><span class="o">)</span>                   <span class="c1">// loop if head changed</span>
+                <span class="k">break</span><span class="o">;</span>
+        <span class="o">}</span>
+    <span class="o">}</span>
+</pre></div>

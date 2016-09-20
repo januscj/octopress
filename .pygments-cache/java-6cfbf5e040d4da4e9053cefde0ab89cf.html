@@ -1,0 +1,32 @@
+<div class="highlight"><pre><span class="kd">protected</span> <span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">tryAcquire</span><span class="o">(</span><span class="kt">int</span> <span class="n">acquires</span><span class="o">)</span> <span class="o">{</span>
+            <span class="cm">/*</span>
+<span class="cm">             * Walkthrough:</span>
+<span class="cm">             * 1. If read count nonzero or write count nonzero</span>
+<span class="cm">             *    and owner is a different thread, fail.</span>
+<span class="cm">             * 2. If count would saturate, fail. (This can only</span>
+<span class="cm">             *    happen if count is already nonzero.)</span>
+<span class="cm">             * 3. Otherwise, this thread is eligible for lock if</span>
+<span class="cm">             *    it is either a reentrant acquire or</span>
+<span class="cm">             *    queue policy allows it. If so, update state</span>
+<span class="cm">             *    and set owner.</span>
+<span class="cm">             */</span>
+            <span class="n">Thread</span> <span class="n">current</span> <span class="o">=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">();</span>
+            <span class="kt">int</span> <span class="n">c</span> <span class="o">=</span> <span class="n">getState</span><span class="o">();</span>
+            <span class="kt">int</span> <span class="n">w</span> <span class="o">=</span> <span class="n">exclusiveCount</span><span class="o">(</span><span class="n">c</span><span class="o">);</span>
+            <span class="k">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">!=</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+                <span class="c1">// (Note: if c != 0 and w == 0 then shared count != 0)</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">w</span> <span class="o">==</span> <span class="mi">0</span> <span class="o">||</span> <span class="n">current</span> <span class="o">!=</span> <span class="n">getExclusiveOwnerThread</span><span class="o">())</span>
+                    <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">w</span> <span class="o">+</span> <span class="n">exclusiveCount</span><span class="o">(</span><span class="n">acquires</span><span class="o">)</span> <span class="o">&gt;</span> <span class="n">MAX_COUNT</span><span class="o">)</span>
+                    <span class="k">throw</span> <span class="k">new</span> <span class="nf">Error</span><span class="o">(</span><span class="s">&quot;Maximum lock count exceeded&quot;</span><span class="o">);</span>
+                <span class="c1">// Reentrant acquire</span>
+                <span class="n">setState</span><span class="o">(</span><span class="n">c</span> <span class="o">+</span> <span class="n">acquires</span><span class="o">);</span>
+                <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+            <span class="o">}</span>
+            <span class="k">if</span> <span class="o">(</span><span class="n">writerShouldBlock</span><span class="o">()</span> <span class="o">||</span>
+                <span class="o">!</span><span class="n">compareAndSetState</span><span class="o">(</span><span class="n">c</span><span class="o">,</span> <span class="n">c</span> <span class="o">+</span> <span class="n">acquires</span><span class="o">))</span>
+                <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+            <span class="n">setExclusiveOwnerThread</span><span class="o">(</span><span class="n">current</span><span class="o">);</span>
+            <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+        <span class="o">}</span>
+</pre></div>

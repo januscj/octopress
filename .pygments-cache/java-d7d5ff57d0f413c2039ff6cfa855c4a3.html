@@ -1,0 +1,55 @@
+<div class="highlight"><pre><span class="kd">final</span> <span class="kt">int</span> <span class="nf">fullTryAcquireShared</span><span class="o">(</span><span class="n">Thread</span> <span class="n">current</span><span class="o">)</span> <span class="o">{</span>
+            <span class="cm">/*</span>
+<span class="cm">             * This code is in part redundant with that in</span>
+<span class="cm">             * tryAcquireShared but is simpler overall by not</span>
+<span class="cm">             * complicating tryAcquireShared with interactions between</span>
+<span class="cm">             * retries and lazily reading hold counts.</span>
+<span class="cm">             */</span>
+            <span class="n">HoldCounter</span> <span class="n">rh</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
+            <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+                <span class="kt">int</span> <span class="n">c</span> <span class="o">=</span> <span class="n">getState</span><span class="o">();</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">exclusiveCount</span><span class="o">(</span><span class="n">c</span><span class="o">)</span> <span class="o">!=</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+                    <span class="k">if</span> <span class="o">(</span><span class="n">getExclusiveOwnerThread</span><span class="o">()</span> <span class="o">!=</span> <span class="n">current</span><span class="o">)</span>
+                        <span class="k">return</span> <span class="o">-</span><span class="mi">1</span><span class="o">;</span>
+                    <span class="c1">// else we hold the exclusive lock; blocking here</span>
+                    <span class="c1">// would cause deadlock.</span>
+                <span class="o">}</span> <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">readerShouldBlock</span><span class="o">())</span> <span class="o">{</span>
+                    <span class="c1">// Make sure we&#39;re not acquiring read lock reentrantly</span>
+                    <span class="k">if</span> <span class="o">(</span><span class="n">firstReader</span> <span class="o">==</span> <span class="n">current</span><span class="o">)</span> <span class="o">{</span>
+                        <span class="c1">// assert firstReaderHoldCount &gt; 0;</span>
+                    <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+                        <span class="k">if</span> <span class="o">(</span><span class="n">rh</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
+                            <span class="n">rh</span> <span class="o">=</span> <span class="n">cachedHoldCounter</span><span class="o">;</span>
+                            <span class="k">if</span> <span class="o">(</span><span class="n">rh</span> <span class="o">==</span> <span class="kc">null</span> <span class="o">||</span> <span class="n">rh</span><span class="o">.</span><span class="na">tid</span> <span class="o">!=</span> <span class="n">current</span><span class="o">.</span><span class="na">getId</span><span class="o">())</span> <span class="o">{</span>
+                                <span class="n">rh</span> <span class="o">=</span> <span class="n">readHolds</span><span class="o">.</span><span class="na">get</span><span class="o">();</span>
+                                <span class="k">if</span> <span class="o">(</span><span class="n">rh</span><span class="o">.</span><span class="na">count</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span>
+                                    <span class="n">readHolds</span><span class="o">.</span><span class="na">remove</span><span class="o">();</span>
+                            <span class="o">}</span>
+                        <span class="o">}</span>
+                        <span class="k">if</span> <span class="o">(</span><span class="n">rh</span><span class="o">.</span><span class="na">count</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span>
+                            <span class="k">return</span> <span class="o">-</span><span class="mi">1</span><span class="o">;</span>
+                    <span class="o">}</span>
+                <span class="o">}</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">sharedCount</span><span class="o">(</span><span class="n">c</span><span class="o">)</span> <span class="o">==</span> <span class="n">MAX_COUNT</span><span class="o">)</span>
+                    <span class="k">throw</span> <span class="k">new</span> <span class="nf">Error</span><span class="o">(</span><span class="s">&quot;Maximum lock count exceeded&quot;</span><span class="o">);</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">compareAndSetState</span><span class="o">(</span><span class="n">c</span><span class="o">,</span> <span class="n">c</span> <span class="o">+</span> <span class="n">SHARED_UNIT</span><span class="o">))</span> <span class="o">{</span>
+                    <span class="k">if</span> <span class="o">(</span><span class="n">sharedCount</span><span class="o">(</span><span class="n">c</span><span class="o">)</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+                        <span class="n">firstReader</span> <span class="o">=</span> <span class="n">current</span><span class="o">;</span>
+                        <span class="n">firstReaderHoldCount</span> <span class="o">=</span> <span class="mi">1</span><span class="o">;</span>
+                    <span class="o">}</span> <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">firstReader</span> <span class="o">==</span> <span class="n">current</span><span class="o">)</span> <span class="o">{</span>
+                        <span class="n">firstReaderHoldCount</span><span class="o">++;</span>
+                    <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+                        <span class="k">if</span> <span class="o">(</span><span class="n">rh</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span>
+                            <span class="n">rh</span> <span class="o">=</span> <span class="n">cachedHoldCounter</span><span class="o">;</span>
+                        <span class="k">if</span> <span class="o">(</span><span class="n">rh</span> <span class="o">==</span> <span class="kc">null</span> <span class="o">||</span> <span class="n">rh</span><span class="o">.</span><span class="na">tid</span> <span class="o">!=</span> <span class="n">current</span><span class="o">.</span><span class="na">getId</span><span class="o">())</span>
+                            <span class="n">rh</span> <span class="o">=</span> <span class="n">readHolds</span><span class="o">.</span><span class="na">get</span><span class="o">();</span>
+                        <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">rh</span><span class="o">.</span><span class="na">count</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span>
+                            <span class="n">readHolds</span><span class="o">.</span><span class="na">set</span><span class="o">(</span><span class="n">rh</span><span class="o">);</span>
+                        <span class="n">rh</span><span class="o">.</span><span class="na">count</span><span class="o">++;</span>
+                        <span class="n">cachedHoldCounter</span> <span class="o">=</span> <span class="n">rh</span><span class="o">;</span> <span class="c1">// cache for release</span>
+                    <span class="o">}</span>
+                    <span class="k">return</span> <span class="mi">1</span><span class="o">;</span>
+                <span class="o">}</span>
+            <span class="o">}</span>
+        <span class="o">}</span>
+</pre></div>

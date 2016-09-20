@@ -1,0 +1,19 @@
+<div class="highlight"><pre>        <span class="kd">public</span> <span class="kd">final</span> <span class="kt">void</span> <span class="nf">await</span><span class="o">()</span> <span class="kd">throws</span> <span class="n">InterruptedException</span> <span class="o">{</span>
+            <span class="k">if</span> <span class="o">(</span><span class="n">Thread</span><span class="o">.</span><span class="na">interrupted</span><span class="o">())</span>
+                <span class="k">throw</span> <span class="k">new</span> <span class="nf">InterruptedException</span><span class="o">();</span>
+            <span class="n">Node</span> <span class="n">node</span> <span class="o">=</span> <span class="n">addConditionWaiter</span><span class="o">();</span>
+            <span class="kt">int</span> <span class="n">savedState</span> <span class="o">=</span> <span class="n">fullyRelease</span><span class="o">(</span><span class="n">node</span><span class="o">);</span>
+            <span class="kt">int</span> <span class="n">interruptMode</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span>
+            <span class="k">while</span> <span class="o">(!</span><span class="n">isOnSyncQueue</span><span class="o">(</span><span class="n">node</span><span class="o">))</span> <span class="o">{</span>
+                <span class="n">LockSupport</span><span class="o">.</span><span class="na">park</span><span class="o">(</span><span class="k">this</span><span class="o">);</span>
+                <span class="k">if</span> <span class="o">((</span><span class="n">interruptMode</span> <span class="o">=</span> <span class="n">checkInterruptWhileWaiting</span><span class="o">(</span><span class="n">node</span><span class="o">))</span> <span class="o">!=</span> <span class="mi">0</span><span class="o">)</span>
+                    <span class="k">break</span><span class="o">;</span>
+            <span class="o">}</span>
+            <span class="k">if</span> <span class="o">(</span><span class="n">acquireQueued</span><span class="o">(</span><span class="n">node</span><span class="o">,</span> <span class="n">savedState</span><span class="o">)</span> <span class="o">&amp;&amp;</span> <span class="n">interruptMode</span> <span class="o">!=</span> <span class="n">THROW_IE</span><span class="o">)</span>
+                <span class="n">interruptMode</span> <span class="o">=</span> <span class="n">REINTERRUPT</span><span class="o">;</span>
+            <span class="k">if</span> <span class="o">(</span><span class="n">node</span><span class="o">.</span><span class="na">nextWaiter</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)</span> <span class="c1">// clean up if cancelled</span>
+                <span class="n">unlinkCancelledWaiters</span><span class="o">();</span>
+            <span class="k">if</span> <span class="o">(</span><span class="n">interruptMode</span> <span class="o">!=</span> <span class="mi">0</span><span class="o">)</span>
+                <span class="n">reportInterruptAfterWait</span><span class="o">(</span><span class="n">interruptMode</span><span class="o">);</span>
+        <span class="o">}</span>
+</pre></div>

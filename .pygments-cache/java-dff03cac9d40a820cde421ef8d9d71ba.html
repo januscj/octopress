@@ -1,0 +1,8 @@
+<div class="highlight"><pre>    <span class="kd">private</span> <span class="n">AbstractChannelHandlerContext</span> <span class="nf">findContextInbound</span><span class="o">()</span> <span class="o">{</span>
+        <span class="n">AbstractChannelHandlerContext</span> <span class="n">ctx</span> <span class="o">=</span> <span class="k">this</span><span class="o">;</span>
+        <span class="k">do</span> <span class="o">{</span>
+            <span class="n">ctx</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="na">next</span><span class="o">;</span>
+        <span class="o">}</span> <span class="k">while</span> <span class="o">(!</span><span class="n">ctx</span><span class="o">.</span><span class="na">inbound</span><span class="o">);</span>
+        <span class="k">return</span> <span class="n">ctx</span><span class="o">;</span>
+    <span class="o">}</span>
+</pre></div>

@@ -1,0 +1,435 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: Netty分析 | Chin的博客]]></title>
+  <link href="http://januscj.github.io//categories/nettyfen-xi/atom.xml" rel="self"/>
+  <link href="http://januscj.github.io/"/>
+  <updated>2016-09-05T12:10:27+08:00</updated>
+  <id>http://januscj.github.io/</id>
+  <author>
+    <name><![CDATA[jean]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[Netty事件模型分析]]></title>
+    <link href="http://januscj.github.io/2016/08/02/nettyshi-jian-mo-xing-fen-xi/"/>
+    <updated>2016-08-02T17:49:50+08:00</updated>
+    <id>http://januscj.github.io/2016/08/02/nettyshi-jian-mo-xing-fen-xi</id>
+    <content type="html"><![CDATA[<p>netty中以channel来表示每个连接，用handler来做事件的处理，pipline则是将handler组成了双向链表。事件借助pipline在链表中传播，pipline的整个结构如下：</p>
+
+<p><img src="/images/netty-pipline.png" title="netty pipline结构" ></p>
+
+<p>其中的context指的是ChannelHandlerContext，它维护了channel、hander的引用。</p>
+
+<p>那事件是怎么在pipline中传播的呢？是从头结点开始，还是从尾节点开始呢？又是从哪里出发的呢？</p>
+
+<p>我们从读的事件着手分析，先看事件的源头是哪里。</p>
+
+<p>netty里有不同的io编程模型实现，以Nio为例，对io事件的处理是在NioEventLoop里做的，事件的注册，是下面的这个方法</p>
+
+<pre><code class="java">
+private static void processSelectedKey(SelectionKey k, AbstractNioChannel ch) {
+        final NioUnsafe unsafe = ch.unsafe();
+        if (!k.isValid()) {
+            // close the channel if the key is not valid anymore
+            unsafe.close(unsafe.voidPromise());
+            return;
+        }
+
+        try {
+            int readyOps = k.readyOps();
+            // Also check for readOps of 0 to workaround possible JDK bug which may otherwise lead
+            // to a spin loop
+            if ((readyOps &amp; (SelectionKey.OP_READ | SelectionKey.OP_ACCEPT)) != 0 || readyOps == 0) {
+                unsafe.read();
+                if (!ch.isOpen()) {
+                    // Connection already closed - no need to handle write.
+                    return;
+                }
+            }
+            if ((readyOps &amp; SelectionKey.OP_WRITE) != 0) {
+                // Call forceFlush which will also take care of clear the OP_WRITE once there is nothing left to write
+                ch.unsafe().forceFlush();
+            }
+            if ((readyOps &amp; SelectionKey.OP_CONNECT) != 0) {
+                // remove OP_CONNECT as otherwise Selector.select(..) will always return without blocking
+                // See https://github.com/netty/netty/issues/924
+                int ops = k.interestOps();
+                ops &amp;= ~SelectionKey.OP_CONNECT;
+                k.interestOps(ops);
+
+                unsafe.finishConnect();
+            }
+        } catch (CancelledKeyException ignored) {
+            unsafe.close(unsafe.voidPromise());
+        }
+    }
+</code></pre>
+
+<p>我们看到，不同的事件调用unsafe的不同方法，netty对底层socket的操作都是通过unsafe来做的。而unsafe主要由两种不同的实现NioMessageUnsafe和NioByteUnsafe。NioServerSocketChannel使用的是NioMessageUnsafe来做socket操作，NioSocketChannel使用NioByteUnsafe来做soket操作。以服务端的NioMessageUnsafe为例来看下read()方法的实现：
+``` java</p>
+
+<pre><code>    @Override
+    public void read() {
+        assert eventLoop().inEventLoop();
+        final ChannelConfig config = config();
+        if (!config.isAutoRead() &amp;&amp; !isReadPending()) {
+            // ChannelConfig.setAutoRead(false) was called in the meantime
+            removeReadOp();
+            return;
+        }
+
+        final int maxMessagesPerRead = config.getMaxMessagesPerRead();
+        final ChannelPipeline pipeline = pipeline();
+        boolean closed = false;
+        Throwable exception = null;
+        try {
+            try {
+                for (;;) {
+                    int localRead = doReadMessages(readBuf);
+                    if (localRead == 0) {
+                        break;
+                    }
+                    if (localRead &lt; 0) {
+                        closed = true;
+                        break;
+                    }
+
+                    // stop reading and remove op
+                    if (!config.isAutoRead()) {
+                        break;
+                    }
+
+                    if (readBuf.size() &gt;= maxMessagesPerRead) {
+                        break;
+                    }
+                }
+            } catch (Throwable t) {
+                exception = t;
+            }
+            setReadPending(false);
+            int size = readBuf.size();
+            for (int i = 0; i &lt; size; i ++) {
+                pipeline.fireChannelRead(readBuf.get(i));
+            }
+
+            readBuf.clear();
+            pipeline.fireChannelReadComplete();
+
+            if (exception != null) {
+                if (exception instanceof IOException &amp;&amp; !(exception instanceof PortUnreachableException)) {
+                    // ServerChannel should not be closed even on IOException because it can often continue
+                    // accepting incoming connections. (e.g. too many open files)
+                    closed = !(AbstractNioMessageChannel.this instanceof ServerChannel);
+                }
+
+                pipeline.fireExceptionCaught(exception);
+            }
+
+            if (closed) {
+                if (isOpen()) {
+                    close(voidPromise());
+                }
+            }
+        } finally {
+            // Check if there is a readPending which was not processed yet.
+            // This could be for two reasons:
+            // * The user called Channel.read() or ChannelHandlerContext.read() in channelRead(...) method
+            // * The user called Channel.read() or ChannelHandlerContext.read() in channelReadComplete(...) method
+            //
+            // See https://github.com/netty/netty/issues/2254
+            if (!config.isAutoRead() &amp;&amp; !isReadPending()) {
+                removeReadOp();
+            }
+        }
+    }
+</code></pre>
+
+<pre><code>
+关键在读数据的时候的那个for循环，调用pipline.fireChannelRead()这个是读事件的触发源头，读完成的触发也在这个方法里触发 pipeline.fireChannelReadComplete()。
+
+下面来分析事件是如何在pipline中传播的，先来看pipline的fireChannelRead()方法代码：
+</code></pre>
+
+<pre><code>@Override
+public ChannelPipeline fireChannelRead(Object msg) {
+    head.fireChannelRead(msg);
+    return this;
+}
+</code></pre>
+
+<pre><code>由此可见读事件是从head开始触发的(**所有的inbound事件都是从head开始触发的**)，接着分析head节点的fireChannelRead,head节点是AbstractChannelHandlerContext的一个实例，具体实现在抽象类已经做了：
+</code></pre>
+
+<pre><code>@Override
+public ChannelHandlerContext fireChannelRead(final Object msg) {
+    if (msg == null) {
+        throw new NullPointerException("msg");
+    }
+
+    final AbstractChannelHandlerContext next = findContextInbound();
+    EventExecutor executor = next.executor();
+    if (executor.inEventLoop()) {
+        next.invokeChannelRead(msg);
+    } else {
+        executor.execute(new OneTimeTask() {
+            @Override
+            public void run() {
+                next.invokeChannelRead(msg);
+            }
+        });
+    }
+    return this;
+}
+</code></pre>
+
+<pre><code>findContextInbound()回从pipline的handlerContext链表里获取一个inboundHander来调用invokeChannelRead()，findContextInbound()的逻辑如下：
+</code></pre>
+
+<pre><code>private AbstractChannelHandlerContext findContextInbound() {
+    AbstractChannelHandlerContext ctx = this;
+    do {
+        ctx = ctx.next;
+    } while (!ctx.inbound);
+    return ctx;
+}
+</code></pre>
+
+<pre><code>
+从代码可以看出，它会从头节点开始直到找到InboundHandler节点，接着调用节点的invokeChannelRead()方法：
+</code></pre>
+
+<pre><code>private void invokeChannelRead(Object msg) {
+    try {
+        ((ChannelInboundHandler) handler()).channelRead(this, msg);
+    } catch (Throwable t) {
+        notifyHandlerException(t);
+    }
+ }
+</code></pre>
+
+<pre><code>AbstractChannelHandlerContext的invokeChannelRead方法实际上是调用这个context里的handler的channelRead()方法。我们知道ChannelInboundHandlerAdapter的channelRead方法代码如下：
+</code></pre>
+
+<pre><code>@Override
+public void channelRead(ChannelHandlerContext ctx, Object msg) throws    Exception {
+    ctx.fireChannelRead(msg);
+}
+</code></pre>
+
+<p>```
+它只是接着调用AbstractChannelHandlerContext的fireChannelRead()，fireChannelRead()又会从当前节点开始寻找下一个inbound context，这样事件就传递下去了。</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Netty初步分析]]></title>
+    <link href="http://januscj.github.io/2016/07/28/nettychu-bu-fen-xi/"/>
+    <updated>2016-07-28T20:38:43+08:00</updated>
+    <id>http://januscj.github.io/2016/07/28/nettychu-bu-fen-xi</id>
+    <content type="html"><![CDATA[<p>网络通讯是分布式架构的基础，而netty作为网络通讯的基础库，被广泛应用在各种中间件中。深入分析netty很有必要。</p>
+
+<p>从一个demo来了解netty，先看server端代码</p>
+
+<pre><code class="java">
+ public class TcpServer {
+
+    private int port;
+
+    public TcpServer(int port) {
+        this.port = port;
+    }
+
+    public void run() throws Exception {
+        EventLoopGroup bossGroup = new NioEventLoopGroup();
+        EventLoopGroup workerGroup = new NioEventLoopGroup();
+        try {
+            ServerBootstrap b = new ServerBootstrap();
+            b.group(bossGroup, workerGroup)
+                    .channel(NioServerSocketChannel.class)
+                    .childHandler(new ChannelInitializer&lt;SocketChannel&gt;() { // (4)
+                        @Override
+                        public void initChannel(SocketChannel ch) throws Exception {
+                            ch.pipeline().addLast(new StringEncoder(CharsetUtil.UTF_8), new StringDecoder(CharsetUtil.UTF_8)).
+                                    addLast(new ServerHandler(SessionManager.getManager()));
+                        }
+                    })
+                    .option(ChannelOption.SO_BACKLOG, 128)
+                    .option(ChannelOption.SO_KEEPALIVE, true)
+                    .option(ChannelOption.TCP_NODELAY, true);
+
+            //启动推送消息线程
+            Thread t = new Thread(new PushRun(new PushMessage()));
+            t.start();
+            ChannelFuture f = b.bind(port).sync();
+            f.channel().closeFuture().sync();
+
+        } finally {
+            workerGroup.shutdownGracefully();
+            bossGroup.shutdownGracefully();
+        }
+    }
+
+    class PushRun implements Runnable {
+
+        private PushMessage pushMessage;
+
+        public PushRun(PushMessage pushMessage) {
+            this.pushMessage = pushMessage;
+        }
+
+        public void run() {
+            int i = 0;
+            while (true) {
+                i++;
+                pushMessage.sendMsg("send msg:" + i, 34445L);
+                try {
+                    Thread.sleep(500L);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+        int port;
+        if (args.length &gt; 0) {
+            port = Integer.parseInt(args[0]);
+        } else {
+            port = 4199;
+        }
+        new TcpServer(port).run();
+    }
+}
+</code></pre>
+
+<p>我们看到先是创建了两个EventLoopGroup，eventLoopGroup是什么，先姑且理解为线程组的概念，后面的文章再详细分析netty的线程模型。然后创建ServerBootStrap，设置上面的两个eventGroup，再就是设置handler，channelInit的时候加入StringEncoder,StringDecoder,业务逻辑处理ServerHandler，再就是一些参数的设置，是否启用NODELAY等。</p>
+
+<p>服务端执行b.bind()之后就开始监听客户端的连接，具体的业务逻辑的处理在ServerHandler里做。我们看下ServerHandler的代码，</p>
+
+<pre><code class="java">
+public class ServerHandler extends ChannelInboundHandlerAdapter {
+
+    private SessionManager sessionManager;
+
+    public ServerHandler(SessionManager sessionManager) {
+        super();
+        this.sessionManager = sessionManager;
+    }
+
+    @Override
+    public void channelRead(ChannelHandlerContext ctx, Object msg) {
+        System.out.println("receive from client:" + msg);
+        TcpProtocol tcpProtocol = JSON.parseObject((String) msg, TcpProtocol.class);
+        sessionManager.addSession(String.valueOf(tcpProtocol.getUid()), ctx);
+    }
+
+    @Override
+    public void channelRegistered(ChannelHandlerContext ctx) throws Exception {
+        super.channelRegistered(ctx);
+        System.out.println("channel registered....");
+    }
+
+    @Override
+    public void channelActive(ChannelHandlerContext ctx) throws Exception {
+        super.channelActive(ctx);
+        System.out.println("channel active.....");
+    }
+
+    @Override
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        super.channelInactive(ctx);
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) { // (4)
+        cause.printStackTrace();
+        ctx.close();
+    }
+}
+</code></pre>
+
+<p>ServerHandler继承自ChannelInboundHandlerAdapter，覆盖了一些方法，channelRegistered、channelActive、channelRead、channelInactive，这些方法分别在channel生命周期的不同阶段调用，由此看来，netty是事件编程模型的。</p>
+
+<p>接着看客户端的代码：</p>
+
+<pre><code class="java">
+ublic class TcpClient {
+    public static void main(String[] args) throws Exception {
+        String host = args[0];
+        int port = Integer.parseInt(args[1]);
+        EventLoopGroup workerGroup = new NioEventLoopGroup();
+
+        try {
+            Bootstrap b = new Bootstrap(); // (1)
+            b.group(workerGroup); // (2)
+            b.channel(NioSocketChannel.class); // (3)
+            b.option(ChannelOption.SO_KEEPALIVE, true);
+            b.handler(new ChannelInitializer&lt;SocketChannel&gt;() {
+                @Override
+                public void initChannel(SocketChannel ch) throws Exception {
+                    ch.pipeline().addLast(new StringEncoder(CharsetUtil.UTF_8),
+                            new StringDecoder(CharsetUtil.UTF_8)).addLast(new ClientHandler());
+                }
+            });
+
+            // Start the client.
+            ChannelFuture f = b.connect(host, port).sync(); // (5)
+            TcpProtocol tcpProtocol = new TcpProtocol();
+            tcpProtocol.setUid(34445L);
+            f.channel().writeAndFlush(JSON.toJSONString(tcpProtocol));
+            synchronized (TcpClient.class) {
+                while (true) {
+                    TcpClient.class.wait();
+                }
+            }
+        } finally {
+            workerGroup.shutdownGracefully();
+        }
+    }
+}
+</code></pre>
+
+<p>客户端因为不需要处理连接的监听，所以只创建了一个EventLoopGroup。同样具体的业务处理的逻辑放在Handler里处理，ClientHandler代码如下:</p>
+
+<pre><code class="java">
+package netty; /**
+ * Created by Administrator on 2016/7/13.
+ */
+
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
+
+public class ClientHandler extends ChannelInboundHandlerAdapter {
+
+    @Override
+    public void channelRead(ChannelHandlerContext ctx, Object msg) {
+        System.out.println(msg);
+    }
+
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+        cause.printStackTrace();
+        ctx.close();
+    }
+
+    @Override
+    public void channelActive(ChannelHandlerContext ctx) throws Exception {
+        super.channelActive(ctx);
+    }
+}
+</code></pre>
+
+<p>覆盖channelRead方法只是输出接受到的消息。</p>
+
+<p>我们看到，不管是Server还是Client，netty都是基于事件来做业务的处理，那事件是传播开来的，事件的触发源在哪里呢？下一篇文章详细分析netty的事件传播。</p>
+]]></content>
+  </entry>
+  
+</feed>

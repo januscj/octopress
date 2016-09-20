@@ -1,0 +1,43 @@
+<div class="highlight"><pre><span class="kd">protected</span> <span class="kd">final</span> <span class="kt">int</span> <span class="nf">tryAcquireShared</span><span class="o">(</span><span class="kt">int</span> <span class="n">unused</span><span class="o">)</span> <span class="o">{</span>
+            <span class="cm">/*</span>
+<span class="cm">             * Walkthrough:</span>
+<span class="cm">             * 1. If write lock held by another thread, fail.</span>
+<span class="cm">             * 2. Otherwise, this thread is eligible for</span>
+<span class="cm">             *    lock wrt state, so ask if it should block</span>
+<span class="cm">             *    because of queue policy. If not, try</span>
+<span class="cm">             *    to grant by CASing state and updating count.</span>
+<span class="cm">             *    Note that step does not check for reentrant</span>
+<span class="cm">             *    acquires, which is postponed to full version</span>
+<span class="cm">             *    to avoid having to check hold count in</span>
+<span class="cm">             *    the more typical non-reentrant case.</span>
+<span class="cm">             * 3. If step 2 fails either because thread</span>
+<span class="cm">             *    apparently not eligible or CAS fails or count</span>
+<span class="cm">             *    saturated, chain to version with full retry loop.</span>
+<span class="cm">             */</span>
+            <span class="n">Thread</span> <span class="n">current</span> <span class="o">=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">();</span>
+            <span class="kt">int</span> <span class="n">c</span> <span class="o">=</span> <span class="n">getState</span><span class="o">();</span>
+            <span class="k">if</span> <span class="o">(</span><span class="n">exclusiveCount</span><span class="o">(</span><span class="n">c</span><span class="o">)</span> <span class="o">!=</span> <span class="mi">0</span> <span class="o">&amp;&amp;</span>
+                <span class="n">getExclusiveOwnerThread</span><span class="o">()</span> <span class="o">!=</span> <span class="n">current</span><span class="o">)</span>
+                <span class="k">return</span> <span class="o">-</span><span class="mi">1</span><span class="o">;</span>
+            <span class="kt">int</span> <span class="n">r</span> <span class="o">=</span> <span class="n">sharedCount</span><span class="o">(</span><span class="n">c</span><span class="o">);</span>
+            <span class="k">if</span> <span class="o">(!</span><span class="n">readerShouldBlock</span><span class="o">()</span> <span class="o">&amp;&amp;</span>
+                <span class="n">r</span> <span class="o">&lt;</span> <span class="n">MAX_COUNT</span> <span class="o">&amp;&amp;</span>
+                <span class="n">compareAndSetState</span><span class="o">(</span><span class="n">c</span><span class="o">,</span> <span class="n">c</span> <span class="o">+</span> <span class="n">SHARED_UNIT</span><span class="o">))</span> <span class="o">{</span>
+                <span class="k">if</span> <span class="o">(</span><span class="n">r</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+                    <span class="n">firstReader</span> <span class="o">=</span> <span class="n">current</span><span class="o">;</span>
+                    <span class="n">firstReaderHoldCount</span> <span class="o">=</span> <span class="mi">1</span><span class="o">;</span>
+                <span class="o">}</span> <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">firstReader</span> <span class="o">==</span> <span class="n">current</span><span class="o">)</span> <span class="o">{</span>
+                    <span class="n">firstReaderHoldCount</span><span class="o">++;</span>
+                <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+                    <span class="n">HoldCounter</span> <span class="n">rh</span> <span class="o">=</span> <span class="n">cachedHoldCounter</span><span class="o">;</span>
+                    <span class="k">if</span> <span class="o">(</span><span class="n">rh</span> <span class="o">==</span> <span class="kc">null</span> <span class="o">||</span> <span class="n">rh</span><span class="o">.</span><span class="na">tid</span> <span class="o">!=</span> <span class="n">current</span><span class="o">.</span><span class="na">getId</span><span class="o">())</span>
+                        <span class="n">cachedHoldCounter</span> <span class="o">=</span> <span class="n">rh</span> <span class="o">=</span> <span class="n">readHolds</span><span class="o">.</span><span class="na">get</span><span class="o">();</span>
+                    <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">rh</span><span class="o">.</span><span class="na">count</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span>
+                        <span class="n">readHolds</span><span class="o">.</span><span class="na">set</span><span class="o">(</span><span class="n">rh</span><span class="o">);</span>
+                    <span class="n">rh</span><span class="o">.</span><span class="na">count</span><span class="o">++;</span>
+                <span class="o">}</span>
+                <span class="k">return</span> <span class="mi">1</span><span class="o">;</span>
+            <span class="o">}</span>
+            <span class="k">return</span> <span class="nf">fullTryAcquireShared</span><span class="o">(</span><span class="n">current</span><span class="o">);</span>
+        <span class="o">}</span>
+</pre></div>

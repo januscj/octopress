@@ -1,0 +1,578 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>jdk源码阅读之ReentrantReadWriteLock - Chin的博客</title>
+  <meta name="author" content="jean">
+
+  
+  <meta name="description" content="了解完reentrantlock，再来看看reentrantreadwritelock。在看reentrantreadwritelock源码之前，得了解它的特点。我们都知道读锁跟写锁是互斥的，多个读线程可以同时进行读操作，就是说对锁对读线程来说是共享锁。写锁是独占锁，写锁之间也是互斥的。 &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://januscj.github.io/2015/09/28/jdk-yuan-ma-zhi-reentrantreadwritelock/">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="Chin的博客" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="/javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="//fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="//fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">Chin的博客</a></h1>
+  
+    <h2>程序的世界多奇妙</h2>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="https://www.baidu.com" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="sitesearch" value="januscj.github.io">
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">首页</a></li>
+  <li><a href="/blog/archives">文章列表</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">jdk源码阅读之ReentrantReadWriteLock</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+<time class='entry-date' datetime='2015-09-28T19:14:56+08:00'><span class='date'>2015-09-28</span> <span class='time'>7:14 pm</span></time>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>了解完reentrantlock，再来看看reentrantreadwritelock。在看reentrantreadwritelock源码之前，得了解它的特点。我们都知道读锁跟写锁是互斥的，多个读线程可以同时进行读操作，就是说对锁对读线程来说是共享锁。写锁是独占锁，写锁之间也是互斥的。了解这些基本特性之后，再来看源码。</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'>    <span class="kd">public</span> <span class="nf">ReentrantReadWriteLock</span><span class="o">(</span><span class="kt">boolean</span> <span class="n">fair</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">sync</span> <span class="o">=</span> <span class="n">fair</span> <span class="o">?</span> <span class="k">new</span> <span class="nf">FairSync</span><span class="o">()</span> <span class="o">:</span> <span class="k">new</span> <span class="nf">NonfairSync</span><span class="o">();</span>
+</span><span class='line'>        <span class="n">readerLock</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">ReadLock</span><span class="o">(</span><span class="k">this</span><span class="o">);</span>
+</span><span class='line'>        <span class="n">writerLock</span> <span class="o">=</span> <span class="k">new</span> <span class="nf">WriteLock</span><span class="o">(</span><span class="k">this</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>reentrantreadwritelock是通过上面的代码初始化的，从上面来看读锁跟写锁公用同一个同步器。因为一个同步器只有一个state变量，我们知道同步器使用state来标识线程的不同状态。<strong>那么，reentrantreadwritelock是怎么来区分读锁、写锁的，后面看过源码后知道,它是用state的高16位表示读锁，低16位表示写锁。</strong></p>
+
+<p>先来看读锁的获取，读锁获取首先是下面的代码</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">protected</span> <span class="kd">final</span> <span class="kt">int</span> <span class="nf">tryAcquireShared</span><span class="o">(</span><span class="kt">int</span> <span class="n">unused</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="cm">/*</span>
+</span><span class='line'><span class="cm">             * Walkthrough:</span>
+</span><span class='line'><span class="cm">             * 1. If write lock held by another thread, fail.</span>
+</span><span class='line'><span class="cm">             * 2. Otherwise, this thread is eligible for</span>
+</span><span class='line'><span class="cm">             *    lock wrt state, so ask if it should block</span>
+</span><span class='line'><span class="cm">             *    because of queue policy. If not, try</span>
+</span><span class='line'><span class="cm">             *    to grant by CASing state and updating count.</span>
+</span><span class='line'><span class="cm">             *    Note that step does not check for reentrant</span>
+</span><span class='line'><span class="cm">             *    acquires, which is postponed to full version</span>
+</span><span class='line'><span class="cm">             *    to avoid having to check hold count in</span>
+</span><span class='line'><span class="cm">             *    the more typical non-reentrant case.</span>
+</span><span class='line'><span class="cm">             * 3. If step 2 fails either because thread</span>
+</span><span class='line'><span class="cm">             *    apparently not eligible or CAS fails or count</span>
+</span><span class='line'><span class="cm">             *    saturated, chain to version with full retry loop.</span>
+</span><span class='line'><span class="cm">             */</span>
+</span><span class='line'>            <span class="n">Thread</span> <span class="n">current</span> <span class="o">=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">();</span>
+</span><span class='line'>            <span class="kt">int</span> <span class="n">c</span> <span class="o">=</span> <span class="n">getState</span><span class="o">();</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">exclusiveCount</span><span class="o">(</span><span class="n">c</span><span class="o">)</span> <span class="o">!=</span> <span class="mi">0</span> <span class="o">&amp;&amp;</span>
+</span><span class='line'>                <span class="n">getExclusiveOwnerThread</span><span class="o">()</span> <span class="o">!=</span> <span class="n">current</span><span class="o">)</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">-</span><span class="mi">1</span><span class="o">;</span>
+</span><span class='line'>            <span class="kt">int</span> <span class="n">r</span> <span class="o">=</span> <span class="n">sharedCount</span><span class="o">(</span><span class="n">c</span><span class="o">);</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(!</span><span class="n">readerShouldBlock</span><span class="o">()</span> <span class="o">&amp;&amp;</span>
+</span><span class='line'>                <span class="n">r</span> <span class="o">&lt;</span> <span class="n">MAX_COUNT</span> <span class="o">&amp;&amp;</span>
+</span><span class='line'>                <span class="n">compareAndSetState</span><span class="o">(</span><span class="n">c</span><span class="o">,</span> <span class="n">c</span> <span class="o">+</span> <span class="n">SHARED_UNIT</span><span class="o">))</span> <span class="o">{</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">r</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="n">firstReader</span> <span class="o">=</span> <span class="n">current</span><span class="o">;</span>
+</span><span class='line'>                    <span class="n">firstReaderHoldCount</span> <span class="o">=</span> <span class="mi">1</span><span class="o">;</span>
+</span><span class='line'>                <span class="o">}</span> <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">firstReader</span> <span class="o">==</span> <span class="n">current</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="n">firstReaderHoldCount</span><span class="o">++;</span>
+</span><span class='line'>                <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="n">HoldCounter</span> <span class="n">rh</span> <span class="o">=</span> <span class="n">cachedHoldCounter</span><span class="o">;</span>
+</span><span class='line'>                    <span class="k">if</span> <span class="o">(</span><span class="n">rh</span> <span class="o">==</span> <span class="kc">null</span> <span class="o">||</span> <span class="n">rh</span><span class="o">.</span><span class="na">tid</span> <span class="o">!=</span> <span class="n">current</span><span class="o">.</span><span class="na">getId</span><span class="o">())</span>
+</span><span class='line'>                        <span class="n">cachedHoldCounter</span> <span class="o">=</span> <span class="n">rh</span> <span class="o">=</span> <span class="n">readHolds</span><span class="o">.</span><span class="na">get</span><span class="o">();</span>
+</span><span class='line'>                    <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">rh</span><span class="o">.</span><span class="na">count</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>                        <span class="n">readHolds</span><span class="o">.</span><span class="na">set</span><span class="o">(</span><span class="n">rh</span><span class="o">);</span>
+</span><span class='line'>                    <span class="n">rh</span><span class="o">.</span><span class="na">count</span><span class="o">++;</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>                <span class="k">return</span> <span class="mi">1</span><span class="o">;</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>            <span class="k">return</span> <span class="nf">fullTryAcquireShared</span><span class="o">(</span><span class="n">current</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>从上面的代码来看，首先如果写锁已被其他线程持有，则直接阻塞当前线程。如果进入if分支，分三种情况：没有读线程持有锁，则直接设置firstReader、firstReaderHoldCount；否则，如果当前线程是第一个读线程，则firstReaderHoldCount+1；否则，创建一个HolderCounter对象来记录线程对读锁的持有次数，并将该HolderCounter对象放入ThreadLocal中。其他的情况（CAS失败或readerShouldBlock返回true），则进入fullTryAcquireShared。</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">final</span> <span class="kt">int</span> <span class="nf">fullTryAcquireShared</span><span class="o">(</span><span class="n">Thread</span> <span class="n">current</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="cm">/*</span>
+</span><span class='line'><span class="cm">             * This code is in part redundant with that in</span>
+</span><span class='line'><span class="cm">             * tryAcquireShared but is simpler overall by not</span>
+</span><span class='line'><span class="cm">             * complicating tryAcquireShared with interactions between</span>
+</span><span class='line'><span class="cm">             * retries and lazily reading hold counts.</span>
+</span><span class='line'><span class="cm">             */</span>
+</span><span class='line'>            <span class="n">HoldCounter</span> <span class="n">rh</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>            <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="kt">int</span> <span class="n">c</span> <span class="o">=</span> <span class="n">getState</span><span class="o">();</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">exclusiveCount</span><span class="o">(</span><span class="n">c</span><span class="o">)</span> <span class="o">!=</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="k">if</span> <span class="o">(</span><span class="n">getExclusiveOwnerThread</span><span class="o">()</span> <span class="o">!=</span> <span class="n">current</span><span class="o">)</span>
+</span><span class='line'>                        <span class="k">return</span> <span class="o">-</span><span class="mi">1</span><span class="o">;</span>
+</span><span class='line'>                    <span class="c1">// else we hold the exclusive lock; blocking here</span>
+</span><span class='line'>                    <span class="c1">// would cause deadlock.</span>
+</span><span class='line'>                <span class="o">}</span> <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">readerShouldBlock</span><span class="o">())</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="c1">// Make sure we&#39;re not acquiring read lock reentrantly</span>
+</span><span class='line'>                    <span class="k">if</span> <span class="o">(</span><span class="n">firstReader</span> <span class="o">==</span> <span class="n">current</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                        <span class="c1">// assert firstReaderHoldCount &gt; 0;</span>
+</span><span class='line'>                    <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+</span><span class='line'>                        <span class="k">if</span> <span class="o">(</span><span class="n">rh</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                            <span class="n">rh</span> <span class="o">=</span> <span class="n">cachedHoldCounter</span><span class="o">;</span>
+</span><span class='line'>                            <span class="k">if</span> <span class="o">(</span><span class="n">rh</span> <span class="o">==</span> <span class="kc">null</span> <span class="o">||</span> <span class="n">rh</span><span class="o">.</span><span class="na">tid</span> <span class="o">!=</span> <span class="n">current</span><span class="o">.</span><span class="na">getId</span><span class="o">())</span> <span class="o">{</span>
+</span><span class='line'>                                <span class="n">rh</span> <span class="o">=</span> <span class="n">readHolds</span><span class="o">.</span><span class="na">get</span><span class="o">();</span>
+</span><span class='line'>                                <span class="k">if</span> <span class="o">(</span><span class="n">rh</span><span class="o">.</span><span class="na">count</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>                                    <span class="n">readHolds</span><span class="o">.</span><span class="na">remove</span><span class="o">();</span>
+</span><span class='line'>                            <span class="o">}</span>
+</span><span class='line'>                        <span class="o">}</span>
+</span><span class='line'>                        <span class="k">if</span> <span class="o">(</span><span class="n">rh</span><span class="o">.</span><span class="na">count</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>                            <span class="k">return</span> <span class="o">-</span><span class="mi">1</span><span class="o">;</span>
+</span><span class='line'>                    <span class="o">}</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">sharedCount</span><span class="o">(</span><span class="n">c</span><span class="o">)</span> <span class="o">==</span> <span class="n">MAX_COUNT</span><span class="o">)</span>
+</span><span class='line'>                    <span class="k">throw</span> <span class="k">new</span> <span class="nf">Error</span><span class="o">(</span><span class="s">&quot;Maximum lock count exceeded&quot;</span><span class="o">);</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">compareAndSetState</span><span class="o">(</span><span class="n">c</span><span class="o">,</span> <span class="n">c</span> <span class="o">+</span> <span class="n">SHARED_UNIT</span><span class="o">))</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="k">if</span> <span class="o">(</span><span class="n">sharedCount</span><span class="o">(</span><span class="n">c</span><span class="o">)</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                        <span class="n">firstReader</span> <span class="o">=</span> <span class="n">current</span><span class="o">;</span>
+</span><span class='line'>                        <span class="n">firstReaderHoldCount</span> <span class="o">=</span> <span class="mi">1</span><span class="o">;</span>
+</span><span class='line'>                    <span class="o">}</span> <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">firstReader</span> <span class="o">==</span> <span class="n">current</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                        <span class="n">firstReaderHoldCount</span><span class="o">++;</span>
+</span><span class='line'>                    <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+</span><span class='line'>                        <span class="k">if</span> <span class="o">(</span><span class="n">rh</span> <span class="o">==</span> <span class="kc">null</span><span class="o">)</span>
+</span><span class='line'>                            <span class="n">rh</span> <span class="o">=</span> <span class="n">cachedHoldCounter</span><span class="o">;</span>
+</span><span class='line'>                        <span class="k">if</span> <span class="o">(</span><span class="n">rh</span> <span class="o">==</span> <span class="kc">null</span> <span class="o">||</span> <span class="n">rh</span><span class="o">.</span><span class="na">tid</span> <span class="o">!=</span> <span class="n">current</span><span class="o">.</span><span class="na">getId</span><span class="o">())</span>
+</span><span class='line'>                            <span class="n">rh</span> <span class="o">=</span> <span class="n">readHolds</span><span class="o">.</span><span class="na">get</span><span class="o">();</span>
+</span><span class='line'>                        <span class="k">else</span> <span class="nf">if</span> <span class="o">(</span><span class="n">rh</span><span class="o">.</span><span class="na">count</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>                            <span class="n">readHolds</span><span class="o">.</span><span class="na">set</span><span class="o">(</span><span class="n">rh</span><span class="o">);</span>
+</span><span class='line'>                        <span class="n">rh</span><span class="o">.</span><span class="na">count</span><span class="o">++;</span>
+</span><span class='line'>                        <span class="n">cachedHoldCounter</span> <span class="o">=</span> <span class="n">rh</span><span class="o">;</span> <span class="c1">// cache for release</span>
+</span><span class='line'>                    <span class="o">}</span>
+</span><span class='line'>                    <span class="k">return</span> <span class="mi">1</span><span class="o">;</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>        <span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>fullTryAcquireShared首先会判断若其他线程持有写锁，则会阻塞。若readerShouldBlock返回true，则进入if分支，如果当前线程不是第一个读线程，同时当前线程是之前没有持有读锁，则会从ThreadLocal中移除HoldCounter，最后如果count仍是-1，则直接返回-1，阻塞当前线程。接着下来的代码就是对tryAcquireShared CAS state失败的处理，逻辑类似。</p>
+
+<p>下面来看读锁释放的逻辑:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">protected</span> <span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">tryReleaseShared</span><span class="o">(</span><span class="kt">int</span> <span class="n">unused</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">Thread</span> <span class="n">current</span> <span class="o">=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">();</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">firstReader</span> <span class="o">==</span> <span class="n">current</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="c1">// assert firstReaderHoldCount &gt; 0;</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">firstReaderHoldCount</span> <span class="o">==</span> <span class="mi">1</span><span class="o">)</span>
+</span><span class='line'>                    <span class="n">firstReader</span> <span class="o">=</span> <span class="kc">null</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">else</span>
+</span><span class='line'>                    <span class="n">firstReaderHoldCount</span><span class="o">--;</span>
+</span><span class='line'>            <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">HoldCounter</span> <span class="n">rh</span> <span class="o">=</span> <span class="n">cachedHoldCounter</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">rh</span> <span class="o">==</span> <span class="kc">null</span> <span class="o">||</span> <span class="n">rh</span><span class="o">.</span><span class="na">tid</span> <span class="o">!=</span> <span class="n">current</span><span class="o">.</span><span class="na">getId</span><span class="o">())</span>
+</span><span class='line'>                    <span class="n">rh</span> <span class="o">=</span> <span class="n">readHolds</span><span class="o">.</span><span class="na">get</span><span class="o">();</span>
+</span><span class='line'>                <span class="kt">int</span> <span class="n">count</span> <span class="o">=</span> <span class="n">rh</span><span class="o">.</span><span class="na">count</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">count</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                    <span class="n">readHolds</span><span class="o">.</span><span class="na">remove</span><span class="o">();</span>
+</span><span class='line'>                    <span class="k">if</span> <span class="o">(</span><span class="n">count</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>                        <span class="k">throw</span> <span class="nf">unmatchedUnlockException</span><span class="o">();</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>                <span class="o">--</span><span class="n">rh</span><span class="o">.</span><span class="na">count</span><span class="o">;</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>            <span class="k">for</span> <span class="o">(;;)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="kt">int</span> <span class="n">c</span> <span class="o">=</span> <span class="n">getState</span><span class="o">();</span>
+</span><span class='line'>                <span class="kt">int</span> <span class="n">nextc</span> <span class="o">=</span> <span class="n">c</span> <span class="o">-</span> <span class="n">SHARED_UNIT</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">compareAndSetState</span><span class="o">(</span><span class="n">c</span><span class="o">,</span> <span class="n">nextc</span><span class="o">))</span>
+</span><span class='line'>                    <span class="c1">// Releasing the read lock has no effect on readers,</span>
+</span><span class='line'>                    <span class="c1">// but it may allow waiting writers to proceed if</span>
+</span><span class='line'>                    <span class="c1">// both read and write locks are now free.</span>
+</span><span class='line'>                    <span class="k">return</span> <span class="n">nextc</span> <span class="o">==</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>        <span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>首先，如果当前线程是第一个读线程，先判断读锁重入次数是否为1,如果为1，则直接将firstReader置null;否则，firstReaderHoldCount-1；否则，如果当前线程不是第一个读线程，则对持锁次数减1.下面的for循环是处理CAS state。</p>
+
+<p>下面接着来看写锁的获取锁的过程:</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">protected</span> <span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">tryAcquire</span><span class="o">(</span><span class="kt">int</span> <span class="n">acquires</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="cm">/*</span>
+</span><span class='line'><span class="cm">             * Walkthrough:</span>
+</span><span class='line'><span class="cm">             * 1. If read count nonzero or write count nonzero</span>
+</span><span class='line'><span class="cm">             *    and owner is a different thread, fail.</span>
+</span><span class='line'><span class="cm">             * 2. If count would saturate, fail. (This can only</span>
+</span><span class='line'><span class="cm">             *    happen if count is already nonzero.)</span>
+</span><span class='line'><span class="cm">             * 3. Otherwise, this thread is eligible for lock if</span>
+</span><span class='line'><span class="cm">             *    it is either a reentrant acquire or</span>
+</span><span class='line'><span class="cm">             *    queue policy allows it. If so, update state</span>
+</span><span class='line'><span class="cm">             *    and set owner.</span>
+</span><span class='line'><span class="cm">             */</span>
+</span><span class='line'>            <span class="n">Thread</span> <span class="n">current</span> <span class="o">=</span> <span class="n">Thread</span><span class="o">.</span><span class="na">currentThread</span><span class="o">();</span>
+</span><span class='line'>            <span class="kt">int</span> <span class="n">c</span> <span class="o">=</span> <span class="n">getState</span><span class="o">();</span>
+</span><span class='line'>            <span class="kt">int</span> <span class="n">w</span> <span class="o">=</span> <span class="n">exclusiveCount</span><span class="o">(</span><span class="n">c</span><span class="o">);</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">c</span> <span class="o">!=</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="c1">// (Note: if c != 0 and w == 0 then shared count != 0)</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">w</span> <span class="o">==</span> <span class="mi">0</span> <span class="o">||</span> <span class="n">current</span> <span class="o">!=</span> <span class="n">getExclusiveOwnerThread</span><span class="o">())</span>
+</span><span class='line'>                    <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>                <span class="k">if</span> <span class="o">(</span><span class="n">w</span> <span class="o">+</span> <span class="n">exclusiveCount</span><span class="o">(</span><span class="n">acquires</span><span class="o">)</span> <span class="o">&gt;</span> <span class="n">MAX_COUNT</span><span class="o">)</span>
+</span><span class='line'>                    <span class="k">throw</span> <span class="k">new</span> <span class="nf">Error</span><span class="o">(</span><span class="s">&quot;Maximum lock count exceeded&quot;</span><span class="o">);</span>
+</span><span class='line'>                <span class="c1">// Reentrant acquire</span>
+</span><span class='line'>                <span class="n">setState</span><span class="o">(</span><span class="n">c</span> <span class="o">+</span> <span class="n">acquires</span><span class="o">);</span>
+</span><span class='line'>                <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">writerShouldBlock</span><span class="o">()</span> <span class="o">||</span>
+</span><span class='line'>                <span class="o">!</span><span class="n">compareAndSetState</span><span class="o">(</span><span class="n">c</span><span class="o">,</span> <span class="n">c</span> <span class="o">+</span> <span class="n">acquires</span><span class="o">))</span>
+</span><span class='line'>                <span class="k">return</span> <span class="kc">false</span><span class="o">;</span>
+</span><span class='line'>            <span class="n">setExclusiveOwnerThread</span><span class="o">(</span><span class="n">current</span><span class="o">);</span>
+</span><span class='line'>            <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>首先，从代码来看，<strong>如果是有读线程持有读锁或其他写线程持有锁，则当前写线程会阻塞</strong>，如果是当前线程持有写锁，则将持锁次数加1。如果writerShouldBlock方法返回true或CAS state失败，则阻塞当前写线程；否则，设置当前线程为写锁持有者。</p>
+
+<p>写锁的释放过程：</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'>  <span class="kd">protected</span> <span class="kd">final</span> <span class="kt">boolean</span> <span class="nf">tryRelease</span><span class="o">(</span><span class="kt">int</span> <span class="n">releases</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(!</span><span class="n">isHeldExclusively</span><span class="o">())</span>
+</span><span class='line'>                <span class="k">throw</span> <span class="k">new</span> <span class="nf">IllegalMonitorStateException</span><span class="o">();</span>
+</span><span class='line'>            <span class="kt">int</span> <span class="n">nextc</span> <span class="o">=</span> <span class="n">getState</span><span class="o">()</span> <span class="o">-</span> <span class="n">releases</span><span class="o">;</span>
+</span><span class='line'>            <span class="kt">boolean</span> <span class="n">free</span> <span class="o">=</span> <span class="n">exclusiveCount</span><span class="o">(</span><span class="n">nextc</span><span class="o">)</span> <span class="o">==</span> <span class="mi">0</span><span class="o">;</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">free</span><span class="o">)</span>
+</span><span class='line'>                <span class="n">setExclusiveOwnerThread</span><span class="o">(</span><span class="kc">null</span><span class="o">);</span>
+</span><span class='line'>            <span class="n">setState</span><span class="o">(</span><span class="n">nextc</span><span class="o">);</span>
+</span><span class='line'>            <span class="k">return</span> <span class="n">free</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>释放锁的代码很简单，因为是只有一个线程持有锁，所有是单线程的，sate的变更没有使用CAS。</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">jean</span></span>
+
+      
+
+
+
+
+<time class='entry-date' datetime='2015-09-28T19:14:56+08:00'><span class='date'>2015-09-28</span> <span class='time'>7:14 pm</span></time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='//categories/jdkyuan-ma-yue-du/'>jdk源码阅读</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/2015/09/14/jdk-yuan-ma-zhi-reentrantlock/" title="Previous Post: jdk源码阅读之ReentrantLock">&laquo; jdk源码阅读之ReentrantLock</a>
+      
+      
+        <a class="basic-alignment right" href="/2015/10/18/jdk-yuan-ma-zhi-threadlocal/" title="Next Post: jdk源码阅读之ThreadLocal">jdk源码阅读之ThreadLocal &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>近期文章</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/2016/08/02/nettyshi-jian-mo-xing-fen-xi/">Netty事件模型分析</a>
+      </li>
+    
+      <li class="post">
+        <a href="/2016/07/28/nettychu-bu-fen-xi/">Netty初步分析</a>
+      </li>
+    
+      <li class="post">
+        <a href="/2015/10/18/jdk-yuan-ma-zhi-threadlocal/">jdk源码阅读之ThreadLocal</a>
+      </li>
+    
+      <li class="post">
+        <a href="/2015/09/28/jdk-yuan-ma-zhi-reentrantreadwritelock/">jdk源码阅读之ReentrantReadWriteLock</a>
+      </li>
+    
+      <li class="post">
+        <a href="/2015/09/14/jdk-yuan-ma-zhi-reentrantlock/">jdk源码阅读之ReentrantLock</a>
+      </li>
+    
+  </ul>
+</section>
+<section>
+  <h1>文章分类</h1>
+  <ul id="categories">
+    <li class='category'><a href='/categories/jdkyuan-ma-yue-du/'>jdk源码阅读 (4)</a></li>
+<li class='category'><a href='/categories/nettyfen-xi/'>netty分析 (2)</a></li>
+
+  </ul>
+</section>
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2016 - jean -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+
+
+
+
+
+
+
+
+
+
+</body>
+</html>
